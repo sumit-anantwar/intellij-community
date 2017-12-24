@@ -25,8 +25,6 @@ import java.util.Map;
 /**
  * Created with IntelliJ IDEA.
  * User: Irina.Chernushina
- * Date: 8/30/12
- * Time: 5:18 PM
  *
  * We consider here, that history is traversed "from now to past"
  */
@@ -73,7 +71,7 @@ public class SvnPathThroughHistoryCorrection implements LogEntryConsumer {
     }
   }
 
-  private boolean parentPathChanged(String copyPath, String thisEntryPath) throws SVNException {
+  private boolean parentPathChanged(String copyPath, String thisEntryPath) {
     if (SVNPathUtil.isAncestor(thisEntryPath, myPath)) {
       final String relativePath = SVNPathUtil.getRelativePath(thisEntryPath, myPath);
       myPath = SvnUtil.appendMultiParts(copyPath, relativePath);

@@ -46,7 +46,9 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public class FoldingModelImpl implements FoldingModelEx, PrioritizedInternalDocumentListener, Dumpable, ModificationTracker {
   private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.editor.impl.EditorFoldingModelImpl");
-  
+
+  public static final Key<Boolean> SELECT_REGION_ON_CARET_NEARBY = Key.create("select.region.on.caret.nearby");
+
   private static final Key<SavedCaretPosition> SAVED_CARET_POSITION = Key.create("saved.position.before.folding");
   private static final Key<Boolean> MARK_FOR_UPDATE = Key.create("marked.for.position.update");
 
@@ -315,10 +317,8 @@ public class FoldingModelImpl implements FoldingModelEx, PrioritizedInternalDocu
     }
     FoldRegion[] regions = getAllFoldRegions();
     for (FoldRegion region : regions) {
-      if (!region.isExpanded()) {
-        notifyListenersOnFoldRegionStateChange(region);
-        myFoldRegionsProcessed = true;
-      }
+      if (!region.isExpanded()) notifyListenersOnFoldRegionStateChange(region);
+      region.dispose();
     }
     doClearFoldRegions();
   }

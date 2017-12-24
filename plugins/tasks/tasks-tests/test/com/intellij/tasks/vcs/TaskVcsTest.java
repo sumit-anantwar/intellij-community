@@ -17,24 +17,30 @@ package com.intellij.tasks.vcs;
 
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.progress.ProgressIndicator;
+import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.vcs.FilePath;
 import com.intellij.openapi.vcs.ProjectLevelVcsManager;
 import com.intellij.openapi.vcs.changes.*;
 import com.intellij.openapi.vcs.changes.committed.MockAbstractVcs;
+import com.intellij.openapi.vcs.changes.shelf.ShelveChangesManager;
+import com.intellij.openapi.vcs.changes.shelf.ShelvedChangeList;
 import com.intellij.openapi.vcs.changes.ui.CommitChangeListDialog;
 import com.intellij.openapi.vcs.impl.projectlevelman.AllVcses;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.tasks.*;
+import com.intellij.tasks.actions.OpenTaskDialog;
 import com.intellij.tasks.impl.LocalTaskImpl;
 import com.intellij.tasks.impl.TaskChangelistSupport;
 import com.intellij.tasks.impl.TaskManagerImpl;
 import com.intellij.testFramework.fixtures.CodeInsightFixtureTestCase;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.ui.UIUtil;
 import com.intellij.vcsUtil.VcsUtil;
 import icons.TasksIcons;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
@@ -208,7 +214,7 @@ public class TaskVcsTest extends CodeInsightFixtureTestCase {
 
     LocalTask anotherTask = myTaskManager.findTask("TEST-001");
     assertNotNull(anotherTask);
-    addChangeList("Default (1)", "");
+    addChangeList("Default (1)");
 
     assertEquals(1, anotherTask.getChangeLists().size());
     assertEquals(2, defaultTask.getChangeLists().size());
@@ -236,7 +242,7 @@ public class TaskVcsTest extends CodeInsightFixtureTestCase {
   public void testTrackContext() {
     myTaskManager.getState().trackContextForNewChangelist = true;
 
-    addChangeList("New Changelist", "");
+    addChangeList("New Changelist");
     assertEquals(2, myTaskManager.getLocalTasks().size());
     assertEquals(2, myChangeListManager.getChangeListsCopy().size());
     LocalChangeList newChangeList = myChangeListManager.findChangeList("New Changelist");
@@ -298,7 +304,7 @@ public class TaskVcsTest extends CodeInsightFixtureTestCase {
     assertEquals(1, myTaskManager.getLocalTasks().size());
     assertEquals(1, myChangeListManager.getChangeListsCopy().size());
 
-    LocalChangeList changeList = addChangeList("New Changelist", "");
+    LocalChangeList changeList = addChangeList("New Changelist");
 
     assertEquals(1, myTaskManager.getLocalTasks().size());
     assertEquals(2, myChangeListManager.getChangeListsCopy().size());
@@ -312,8 +318,8 @@ public class TaskVcsTest extends CodeInsightFixtureTestCase {
     assertTrue(ContainerUtil.exists(myTaskManager.getLocalTasks(), task -> task.getSummary().equals("New Changelist")));
   }
 
-  private LocalChangeList addChangeList(String title, String comment) {
-    final LocalChangeList list = myChangeListManager.addChangeList(title, comment);
+  private LocalChangeList addChangeList(String title) {
+    final LocalChangeList list = myChangeListManager.addChangeList(title, "");
     new TaskChangelistSupport(getProject(), myTaskManager).addControls(new JPanel(), null).consume(list);
     return list;
   }
@@ -412,6 +418,32 @@ public class TaskVcsTest extends CodeInsightFixtureTestCase {
     assertEquals("1-contains-Illegal$Symbols", myTaskManager.suggestBranchName(withIllegalSymbolsInIssue));
   }
 
+  public void testShelveChanges() {
+
+    LocalTask activeTask = myTaskManager.getActiveTask();
+    addChanges(myChangeListManager.getDefaultChangeList());
+
+    myTaskManager.getState().shelveChanges = true;
+    LocalTaskImpl task = new LocalTaskImpl("id", "summary");
+    OpenTaskDialog dialog = new OpenTaskDialog(getProject(), task);
+    try {
+      dialog.createTask();
+      assertEquals(activeTask.getSummary(), activeTask.getShelfName());
+
+      List<ShelvedChangeList> lists = ShelveChangesManager.getInstance(getProject()).getShelvedChangeLists();
+      assertTrue(lists.stream().anyMatch(list -> list.DESCRIPTION.equals(activeTask.getShelfName())));
+
+      assertEmpty(myChangeListManager.getDefaultChangeList().getChanges());
+      myTaskManager.activateTask(activeTask, true);
+      Collection<Change> changes = myChangeListManager.getDefaultChangeList().getChanges();
+      assertNotEmpty(changes);
+    }
+    finally {
+      dialog.close(DialogWrapper.OK_EXIT_CODE);
+    }
+    UIUtil.dispatchAllInvocationEvents();
+  }
+
   @Override
   public void setUp() throws Exception {
     super.setUp();
@@ -427,72 +459,7 @@ public class TaskVcsTest extends CodeInsightFixtureTestCase {
     ProjectLevelVcsManager.getInstance(getProject()).setDirectoryMapping("", myVcs.getName());
     ProjectLevelVcsManager.getInstance(getProject()).hasActiveVcss();
     myRepository = new TestRepository();
-    myRepository.setTasks(new Task() {
-      @NotNull
-      @Override
-      public String getId() {
-        return "TEST-001";
-      }
-
-      @NotNull
-      @Override
-      public String getSummary() {
-        return "Summary";
-      }
-
-      @Override
-      public String getDescription() {
-        return null;
-      }
-
-      @NotNull
-      @Override
-      public Comment[] getComments() {
-        return Comment.EMPTY_ARRAY;
-      }
-
-      @NotNull
-      @Override
-      public Icon getIcon() {
-        return TasksIcons.Unknown;
-      }
-
-      @NotNull
-      @Override
-      public TaskType getType() {
-        return TaskType.BUG;
-      }
-
-      @Override
-      public Date getUpdated() {
-        return null;
-      }
-
-      @Override
-      public Date getCreated() {
-        return null;
-      }
-
-      @Override
-      public boolean isClosed() {
-        return false;
-      }
-
-      @Override
-      public boolean isIssue() {
-        return true;
-      }
-
-      @Override
-      public String getIssueUrl() {
-        return null;
-      }
-
-      @Override
-      public TaskRepository getRepository() {
-        return myRepository;
-      }
-    });
+    myRepository.setTasks(new MyTask());
     myTaskManager.setRepositories(Collections.singletonList(myRepository));
   }
 
@@ -535,6 +502,73 @@ public class TaskVcsTest extends CodeInsightFixtureTestCase {
 
     @Override
     public void doCleanup(List<VirtualFile> files) {
+    }
+  }
+
+  private class MyTask extends Task {
+    @NotNull
+    @Override
+    public String getId() {
+      return "TEST-001";
+    }
+
+    @NotNull
+    @Override
+    public String getSummary() {
+      return "Summary";
+    }
+
+    @Override
+    public String getDescription() {
+      return null;
+    }
+
+    @NotNull
+    @Override
+    public Comment[] getComments() {
+      return Comment.EMPTY_ARRAY;
+    }
+
+    @NotNull
+    @Override
+    public Icon getIcon() {
+      return TasksIcons.Unknown;
+    }
+
+    @NotNull
+    @Override
+    public TaskType getType() {
+      return TaskType.BUG;
+    }
+
+    @Override
+    public Date getUpdated() {
+      return null;
+    }
+
+    @Override
+    public Date getCreated() {
+      return null;
+    }
+
+    @Override
+    public boolean isClosed() {
+      return false;
+    }
+
+    @Override
+    public boolean isIssue() {
+      return true;
+    }
+
+    @Override
+    public String getIssueUrl() {
+      return null;
+    }
+
+    @Override
+    public TaskRepository getRepository() {
+      return myRepository;
     }
   }
 }

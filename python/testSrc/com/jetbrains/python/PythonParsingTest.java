@@ -111,14 +111,6 @@ public class PythonParsingTest extends ParsingTestCase {
     doTest();
   }
 
-  public void testWithStatement2() {
-    doTest();
-  }
-
-  public void testImportStmt() {
-    doTest();
-  }
-
   public void testDecoratedFunction() {
     doTest();
   }
@@ -375,7 +367,7 @@ public class PythonParsingTest extends ParsingTestCase {
   }
 
   public void doTest() {
-    doTest(LanguageLevel.PYTHON25);
+    doTest(LanguageLevel.PYTHON26);
   }
 
   public void testCompoundStatementAfterSemicolon() {  // PY-7660
@@ -543,6 +535,16 @@ public class PythonParsingTest extends ParsingTestCase {
   // PY-20682
   public void testAwaitOnTheSameLineAsFor() {
     doTest(LanguageLevel.PYTHON35);
+  }
+
+  // PY-17017
+  public void testTrailingBlockCommentsAtEndOfFile() {
+    doTest();
+  }
+
+  // PY-17017
+  public void testTrailingBlockCommentsFollowedByStatement() {
+    doTest();
   }
 
   public void doTest(LanguageLevel languageLevel) {

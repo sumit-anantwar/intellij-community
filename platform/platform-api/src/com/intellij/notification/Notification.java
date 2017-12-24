@@ -15,7 +15,6 @@
  */
 package com.intellij.notification;
 
-import com.google.common.util.concurrent.Atomics;
 import com.intellij.ide.DataManager;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.ActionUtil;
@@ -36,7 +35,7 @@ import javax.swing.*;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Notification bean class contains <b>title:</b>subtitle, content (plain text or HTML) and actions.
@@ -67,8 +66,9 @@ public class Notification {
   private NotificationListener myListener;
   private String myDropDownText;
   private List<AnAction> myActions;
+  private AnAction myContextHelpAction;
 
-  private AtomicReference<Boolean> myExpired = Atomics.newReference(false);
+  private final AtomicBoolean myExpired = new AtomicBoolean(false);
   private Runnable myWhenExpired;
   private Boolean myImportant;
   private WeakReference<Balloon> myBalloonRef;
@@ -282,6 +282,15 @@ public class Notification {
     }
     myActions.add(action);
     return this;
+  }
+
+  public Notification setContextHelpAction(AnAction action) {
+    myContextHelpAction = action;
+    return this;
+  }
+
+  public AnAction getContextHelpAction() {
+    return myContextHelpAction;
   }
 
   @NotNull

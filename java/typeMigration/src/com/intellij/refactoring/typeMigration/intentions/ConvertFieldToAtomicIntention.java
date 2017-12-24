@@ -1,7 +1,7 @@
 package com.intellij.refactoring.typeMigration.intentions;
 
 import com.intellij.codeInsight.FileModificationService;
-import com.intellij.codeInsight.daemon.impl.analysis.HighlightControlFlowUtil;
+import com.intellij.codeInsight.intention.HighPriorityAction;
 import com.intellij.codeInsight.intention.LowPriorityAction;
 import com.intellij.codeInsight.intention.PsiElementBaseIntentionAction;
 import com.intellij.lang.java.JavaLanguage;
@@ -16,7 +16,6 @@ import com.intellij.psi.codeStyle.JavaCodeStyleManager;
 import com.intellij.psi.codeStyle.JavaCodeStyleSettings;
 import com.intellij.psi.impl.AllowedApiFilterExtension;
 import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
 import com.intellij.refactoring.typeMigration.TypeMigrationVariableTypeFixProvider;
 import com.intellij.util.IncorrectOperationException;
@@ -84,23 +83,11 @@ public class ConvertFieldToAtomicIntention extends PsiElementBaseIntentionAction
     return AllowedApiFilterExtension.isClassAllowed(AtomicReference.class.getName(), element);
   }
 
-  private static PsiVariable getVariable(PsiElement element) {
+  PsiVariable getVariable(PsiElement element) {
     if (element instanceof PsiIdentifier) {
       final PsiElement parent = element.getParent();
       if (parent instanceof PsiLocalVariable || parent instanceof PsiField) {
         return (PsiVariable)parent;
-      }
-      if (parent instanceof PsiReferenceExpression) {
-        // Display "Convert to atomic" on the illegal reference to non-effectively final local variable
-        // as this could be a desired fix in such case
-        PsiLocalVariable variable = ObjectUtils.tryCast(((PsiReferenceExpression)parent).resolve(), PsiLocalVariable.class);
-        if (variable == null) return null;
-        PsiElement scope = PsiTreeUtil.getParentOfType(variable, PsiMember.class, PsiLambdaExpression.class);
-        if (scope != null &&
-            scope != PsiTreeUtil.getParentOfType(parent, PsiMember.class, PsiLambdaExpression.class) &&
-            !HighlightControlFlowUtil.isEffectivelyFinal(variable, scope, null)) {
-          return variable;
-        }
       }
     }
     return null;
@@ -137,12 +124,7 @@ public class ConvertFieldToAtomicIntention extends PsiElementBaseIntentionAction
       String finalInitializerText = initializerText;
       WriteAction.run(() -> {
         PsiExpression initializer = JavaPsiFacade.getElementFactory(var.getProject()).createExpressionFromText(finalInitializerText, var);
-        if (var instanceof PsiLocalVariable) {
-          ((PsiLocalVariable)var).setInitializer(initializer);
-        }
-        else if (var instanceof PsiField) {
-          ((PsiField)var).setInitializer(initializer);
-        }
+        var.setInitializer(initializer);
       });
     }
   }
@@ -155,13 +137,7 @@ public class ConvertFieldToAtomicIntention extends PsiElementBaseIntentionAction
       WriteAction.run(() -> {
         if (var.getInitializer() == null) {
           final PsiExpression newInitializer = JavaPsiFacade.getElementFactory(project).createExpressionFromText("new " + toType + "()", var);
-          if (var instanceof PsiLocalVariable) {
-            ((PsiLocalVariable)var).setInitializer(newInitializer);
-          }
-          else if (var instanceof PsiField) {
-            ((PsiField)var).setInitializer(newInitializer);
-          }
-          JavaCodeStyleManager.getInstance(var.getProject()).shortenClassReferences(var.getInitializer());
+          var.setInitializer(newInitializer);
         }
 
         modifierList.setModifierProperty(PsiModifier.FINAL, true);
@@ -221,5 +197,29 @@ public class ConvertFieldToAtomicIntention extends PsiElementBaseIntentionAction
   @Override
   public boolean startInWriteAction() {
     return false;
+  }
+
+  public static class ConvertNonFinalLocalToAtomicFix extends ConvertFieldToAtomicIntention implements HighPriorityAction {
+    private PsiElement myContext;
+
+    public ConvertNonFinalLocalToAtomicFix(PsiElement context) {
+      myContext = context;
+    }
+
+    @Override
+    public boolean isAvailable(@NotNull Project project, Editor editor, @NotNull PsiElement element) {
+      return getVariable(element) != null;
+    }
+
+    @Override
+    PsiVariable getVariable(PsiElement element) {
+      if(myContext instanceof PsiReferenceExpression && myContext.isValid()) {
+        PsiReferenceExpression ref = (PsiReferenceExpression)myContext;
+        if(PsiUtil.isAccessedForWriting(ref)) {
+          return ObjectUtils.tryCast(ref.resolve(), PsiLocalVariable.class);
+        }
+      }
+      return null;
+    }
   }
 }

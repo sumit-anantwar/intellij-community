@@ -43,6 +43,7 @@ import org.jetbrains.jps.incremental.messages.BuildMessage;
 import org.jetbrains.jps.incremental.messages.CompilerMessage;
 import org.jetbrains.jps.model.JpsDummyElement;
 import org.jetbrains.jps.model.java.JpsJavaExtensionService;
+import org.jetbrains.jps.model.java.JpsJavaSdkType;
 import org.jetbrains.jps.model.java.compiler.JpsJavaCompilerConfiguration;
 import org.jetbrains.jps.model.library.sdk.JpsSdk;
 import org.jetbrains.jps.service.JpsServiceManager;
@@ -146,6 +147,10 @@ public abstract class JpsGroovycRunner<R extends BuildRootDescriptor, T extends 
                                                        JpsGroovySettings settings,
                                                        Map<T, String> finalOutputs,
                                                        String compilerOutput, List<File> toCompile, boolean hasStubExcludes) throws Exception {
+    if (myForStubs) {
+      clearContinuation(context, chunk);
+    }
+    
     GroovycContinuation continuation = takeContinuation(context, chunk);
     if (continuation != null) {
       if (Utils.IS_TEST_MODE || LOG.isDebugEnabled()) {
@@ -158,8 +163,8 @@ public abstract class JpsGroovycRunner<R extends BuildRootDescriptor, T extends 
 
     JpsSdk<JpsDummyElement> jdk = GroovyBuilder.getJdk(chunk);
     String version = jdk == null ? SystemInfo.JAVA_RUNTIME_VERSION : jdk.getVersionString();
-    boolean inProcess = "true".equals(System.getProperty("groovyc.in.process", "true"));
-    boolean mayDependOnUtilJar = version != null && StringUtil.compareVersionNumbers(version, "1.6") >= 0;
+    boolean inProcess = shouldRunGroovycInProcess(version);
+    boolean mayDependOnUtilJar = version != null && JpsJavaSdkType.parseVersion(version) >= 6;
     boolean optimizeClassLoading = !inProcess && mayDependOnUtilJar && ourOptimizeThreshold != 0 && toCompilePaths.size() >= ourOptimizeThreshold;
 
     Map<String, String> class2Src = buildClassToSourceMap(chunk, context, toCompilePaths, finalOutputs);
@@ -190,6 +195,14 @@ public abstract class JpsGroovycRunner<R extends BuildRootDescriptor, T extends 
     continuation = groovyc.runGroovyc(classpath, myForStubs, settings, tempFile, parser);
     setContinuation(context, chunk, continuation);
     return parser;
+  }
+
+  private static boolean shouldRunGroovycInProcess(@Nullable String jdkVersion) {
+    String explicitProperty = System.getProperty("groovyc.in.process");
+    if (explicitProperty == null) {
+      return jdkVersion != null && JpsJavaSdkType.parseVersion(jdkVersion) == JpsJavaSdkType.parseVersion(SystemInfo.JAVA_RUNTIME_VERSION);
+    }
+    return "true".equals(explicitProperty);
   }
 
   static void clearContinuation(CompileContext context, ModuleChunk chunk) {
@@ -390,10 +403,9 @@ public abstract class JpsGroovycRunner<R extends BuildRootDescriptor, T extends 
   }
 
   protected Collection<String> generateClasspath(CompileContext context, ModuleChunk chunk) {
-    final Set<String> cp = new LinkedHashSet<>();
     //groovy_rt.jar
     // IMPORTANT! must be the first in classpath
-    cp.addAll(GroovyBuilder.getGroovyRtRoots());
+    final Set<String> cp = new LinkedHashSet<>(GroovyBuilder.getGroovyRtRoots());
 
     for (File file : ProjectPaths.getCompilationClasspathFiles(chunk, chunk.containsTests(), false, false)) {
       cp.add(FileUtil.toCanonicalPath(file.getPath()));

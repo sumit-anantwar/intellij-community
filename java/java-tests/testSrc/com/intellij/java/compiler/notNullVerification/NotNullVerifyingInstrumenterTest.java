@@ -207,11 +207,19 @@ public class NotNullVerifyingInstrumenterTest extends UsefulTestCase {
     verifyCallThrowsException("Argument 0 for @NotNull parameter of MalformedBytecode$NullTest2.handle must not be null", null, testClass.getMethod("main"));
   }
 
+  public void testEnclosingClass() throws Exception {
+    Class<?> testClass = prepareTest();
+    Object obj = testClass.getMethod("main").invoke(null);
+    assertEquals(testClass, obj.getClass().getEnclosingClass());
+  }
+
   public void testLocalClassImplicitParameters() throws Exception {
     Class<?> test = prepareTest(true, "NotNull");
     Object instance = test.newInstance();
     assertEquals(42, test.getMethod("ok").invoke(instance));
     verifyCallThrowsException("Argument for @NotNull parameter 'test' of LocalClassImplicitParameters$1Test.<init> must not be null", instance, test.getMethod("failLocal"));
+    verifyCallThrowsException("Argument for @NotNull parameter 'test' of LocalClassImplicitParameters$1Test2.<init> must not be null", instance, test.getMethod("failLocal2NotNull"));
+    verifyCallThrowsException("Argument for @NotNull parameter 'another' of LocalClassImplicitParameters$1Test3.<init> must not be null", instance, test.getMethod("failLocalNullableNotNull"));
     verifyCallThrowsException("Argument for @NotNull parameter 'test' of LocalClassImplicitParameters$1.method must not be null", instance, test.getMethod("failAnonymous"));
     verifyCallThrowsException("Argument for @NotNull parameter 'param' of LocalClassImplicitParameters$Inner.<init> must not be null", instance, test.getMethod("failInner"));
   }

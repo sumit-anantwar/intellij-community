@@ -27,6 +27,7 @@ import com.intellij.lang.ASTNode;
 import com.intellij.lang.annotation.Annotation;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.lang.annotation.ProblemGroup;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.HighlighterColors;
@@ -80,7 +81,7 @@ public class HighlightInfo implements Segment {
 
   final int navigationShift;
 
-  private volatile RangeHighlighterEx highlighter;// modified in EDT only
+  volatile RangeHighlighterEx highlighter;// modified in EDT only
 
   public List<Pair<IntentionActionDescriptor, TextRange>> quickFixActionRanges;
   public List<Pair<IntentionActionDescriptor, RangeMarker>> quickFixActionMarkers;
@@ -168,6 +169,7 @@ public class HighlightInfo implements Segment {
    * modified in EDT only
    */
   public void setHighlighter(@Nullable RangeHighlighterEx highlighter) {
+    ApplicationManager.getApplication().assertIsDispatchThread();
     this.highlighter = highlighter;
   }
 
@@ -660,6 +662,7 @@ public class HighlightInfo implements Segment {
     if (type == ProblemHighlightType.LIKE_UNUSED_SYMBOL) return HighlightInfoType.UNUSED_SYMBOL;
     if (type == ProblemHighlightType.LIKE_UNKNOWN_SYMBOL) return HighlightInfoType.WRONG_REF;
     if (type == ProblemHighlightType.LIKE_DEPRECATED) return HighlightInfoType.DEPRECATED;
+    if (type == ProblemHighlightType.LIKE_MARKED_FOR_REMOVAL) return HighlightInfoType.MARKED_FOR_REMOVAL;
     return convertSeverity(annotation.getSeverity());
   }
 

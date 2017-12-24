@@ -1,6 +1,7 @@
 package com.jetbrains.jsonSchema.impl;
 
 import com.intellij.json.psi.JsonObject;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.text.StringUtil;
@@ -25,7 +26,6 @@ public class JsonSchemaObject {
   @NonNls public static final String DEFINITIONS = "definitions";
   @NonNls public static final String PROPERTIES = "properties";
   @NotNull private final JsonObject myJsonObject;
-  @Nullable private JsonObject myDefinitions;
   private Map<String, JsonSchemaObject> myDefinitionsMap;
   private Map<String, JsonSchemaObject> myProperties;
 
@@ -167,15 +167,6 @@ public class JsonSchemaObject {
   @NotNull
   public JsonObject getJsonObject() {
     return myJsonObject;
-  }
-
-  @Nullable
-  public JsonObject getDefinitions() {
-    return myDefinitions;
-  }
-
-  public void setDefinitions(@Nullable JsonObject definitions) {
-    myDefinitions = definitions;
   }
 
   public Map<String, JsonSchemaObject> getDefinitionsMap() {
@@ -488,10 +479,6 @@ public class JsonSchemaObject {
     myTitle = title;
   }
 
-  public boolean hasSpecifiedType() {
-    return myType != null || (myTypeVariants != null && !myTypeVariants.isEmpty());
-  }
-
   @Nullable
   public JsonSchemaObject getMatchingPatternPropertySchema(@NotNull String name) {
     if (myPatternProperties == null) return null;
@@ -515,7 +502,7 @@ public class JsonSchemaObject {
         final JsonSchemaObject object = myPatternProperties.getSchemaForPattern(entry.getKey());
         assert object != null;
         return Pair.create(object.getJsonObject(), entry.getValue());
-      }).filter(o -> o != null).collect(Collectors.toMap(o -> o.getFirst(), o -> o.getSecond()));
+      }).collect(Collectors.toMap(o -> o.getFirst(), o -> o.getSecond()));
     }
     return null;
   }
@@ -565,9 +552,7 @@ public class JsonSchemaObject {
 
     JsonSchemaObject object = (JsonSchemaObject)o;
 
-    if (!myJsonObject.equals(object.myJsonObject)) return false;
-
-    return true;
+    return myJsonObject.equals(object.myJsonObject);
   }
 
   @Override
@@ -592,11 +577,16 @@ public class JsonSchemaObject {
     }
   }
 
-  private static boolean matchPattern(@NotNull final Pattern pattern, @NotNull final String s) {
+  public static boolean matchPattern(@NotNull final Pattern pattern, @NotNull final String s) {
     try {
       return pattern.matcher(StringUtil.newBombedCharSequence(s, 300)).matches();
     } catch (ProcessCanceledException e) {
-      // something wrong with the pattern
+      // something wrong with the pattern, infinite cycle?
+      return false;
+    } catch (Exception e) {
+      // catch exceptions around to prevent things like:
+      // https://bugs.openjdk.java.net/browse/JDK-6984178
+      Logger.getInstance(JsonSchemaObject.class).info(e);
       return false;
     }
   }

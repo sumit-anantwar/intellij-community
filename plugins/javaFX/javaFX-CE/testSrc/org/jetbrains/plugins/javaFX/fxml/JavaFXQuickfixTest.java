@@ -17,12 +17,12 @@ package org.jetbrains.plugins.javaFX.fxml;
 
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInsight.intention.IntentionActionDelegate;
+import com.intellij.idea.Bombed;
 import com.intellij.openapi.application.PluginPathManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.roots.ContentEntry;
 import com.intellij.openapi.roots.ModifiableRootModel;
 import com.intellij.psi.PsiModifier;
-import com.intellij.psi.codeStyle.CodeStyleSettingsManager;
 import com.intellij.psi.codeStyle.JavaCodeStyleSettings;
 import com.intellij.psi.xml.XmlFile;
 import com.intellij.testFramework.LightProjectDescriptor;
@@ -35,6 +35,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.javaFX.fxml.codeInsight.inspections.JavaFxUnresolvedFxIdReferenceInspection;
 import org.jetbrains.plugins.javaFX.fxml.codeInsight.intentions.JavaFxInjectPageLanguageIntention;
 
+import java.util.Calendar;
 import java.util.Set;
 
 public class JavaFXQuickfixTest extends LightCodeInsightFixtureTestCase {
@@ -54,19 +55,20 @@ public class JavaFXQuickfixTest extends LightCodeInsightFixtureTestCase {
   }
 
   public void testCreateControllerMethod() {
-    doTest("Create method 'void bar(ActionEvent)'", ".java");
+    doTest("Create method 'bar'", ".java");
   }
 
+  @Bombed(year = 2017, month = Calendar.SEPTEMBER, day = 1, user = "Daniil Ovchinnikov")
   public void testCreateControllerMethodInGroovy() {
     doTest("Create method 'void bar(ActionEvent)'", ".groovy");
   }
 
   public void testCreateControllerMethodGeneric() {
-    doTest("Create method 'void onSort(SortEvent)'", ".java");
+    doTest("Create method 'onSort'", ".java");
   }
 
   public void testCreateControllerMethodHalfRaw() {
-    doTest("Create method 'void onSort(SortEvent)'", ".java");
+    doTest("Create method 'onSort'", ".java");
   }
 
   public void testCreateFieldPublicVisibility() {
@@ -90,23 +92,23 @@ public class JavaFXQuickfixTest extends LightCodeInsightFixtureTestCase {
   }
 
   public void testCreateMethodPublicVisibility() {
-    doTestWithDefaultVisibility("Create method 'void onAction(ActionEvent)'", "CreateMethod", PsiModifier.PUBLIC, ".java");
+    doTestWithDefaultVisibility("Create method 'onAction'", "CreateMethod", PsiModifier.PUBLIC, ".java");
   }
 
   public void testCreateMethodProtectedVisibility() {
-    doTestWithDefaultVisibility("Create method 'void onAction(ActionEvent)'", "CreateMethod", PsiModifier.PROTECTED, ".java");
+    doTestWithDefaultVisibility("Create method 'onAction'", "CreateMethod", PsiModifier.PROTECTED, ".java");
   }
 
   public void testCreateMethodPrivateVisibility() {
-    doTestWithDefaultVisibility("Create method 'void onAction(ActionEvent)'", "CreateMethod", PsiModifier.PRIVATE, ".java");
+    doTestWithDefaultVisibility("Create method 'onAction'", "CreateMethod", PsiModifier.PRIVATE, ".java");
   }
 
   public void testCreateMethodPackageLocalVisibility() {
-    doTestWithDefaultVisibility("Create method 'void onAction(ActionEvent)'", "CreateMethod", PsiModifier.PACKAGE_LOCAL, ".java");
+    doTestWithDefaultVisibility("Create method 'onAction'", "CreateMethod", PsiModifier.PACKAGE_LOCAL, ".java");
   }
 
   public void testCreateMethodEscalateVisibility() {
-    doTestWithDefaultVisibility("Create method 'void onAction(ActionEvent)'", "CreateMethod", VisibilityUtil.ESCALATE_VISIBILITY,
+    doTestWithDefaultVisibility("Create method 'onAction'", "CreateMethod", VisibilityUtil.ESCALATE_VISIBILITY,
                                 ".java");
   }
 
@@ -141,7 +143,7 @@ public class JavaFXQuickfixTest extends LightCodeInsightFixtureTestCase {
                                            final String inputName,
                                            final String defaultVisibility,
                                            final String extension) {
-    JavaCodeStyleSettings settings = CodeStyleSettingsManager.getSettings(getProject()).getCustomSettings(JavaCodeStyleSettings.class);
+    JavaCodeStyleSettings settings = JavaCodeStyleSettings.getInstance(getProject());
     String savedVisibility = settings.VISIBILITY;
     try {
       settings.VISIBILITY = defaultVisibility;
@@ -158,8 +160,8 @@ public class JavaFXQuickfixTest extends LightCodeInsightFixtureTestCase {
 
   private void doTest(final String actionName, final String inputName, final String outputName, final String extension) {
     String path = PlatformTestUtil.lowercaseFirstLetter(inputName, true) + ".fxml";
-    final IntentionAction intention =
-      myFixture.getAvailableIntention(actionName, path, inputName + extension);
+    myFixture.configureByFiles(path, inputName + extension);
+    final IntentionAction intention = myFixture.findSingleIntention(actionName);
     assertNotNull(intention);
     myFixture.launchAction(intention);
     myFixture.checkResultByFile(inputName + extension, outputName + "_after" + extension, true);

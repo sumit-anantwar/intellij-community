@@ -35,8 +35,6 @@ import java.util.*;
 
 /**
  * @author irengrig
- *         Date: 2/21/11
- *         Time: 5:14 PM
  */
 public class CustomChangelistTodosTreeBuilder extends TodoTreeBuilder {
   public static final TodoItem[] EMPTY_ITEMS = new TodoItem[0];
@@ -94,7 +92,7 @@ public class CustomChangelistTodosTreeBuilder extends TodoTreeBuilder {
           }
         }
         // a hack here with _todo filter
-        final TodoCheckinHandlerWorker worker = new TodoCheckinHandlerWorker(myProject, changes, getTodoTreeStructure().getTodoFilter(), true);
+        final TodoCheckinHandlerWorker worker = new TodoCheckinHandlerWorker(myProject, changes, getTodoTreeStructure().getTodoFilter());
         worker.execute();
         buildMap(worker.inOneList());
 
@@ -158,7 +156,7 @@ public class CustomChangelistTodosTreeBuilder extends TodoTreeBuilder {
       final Change change = myChangeListManager.getChange(file.getVirtualFile());
       if (change != null) {
         final TodoCheckinHandlerWorker
-          worker = new TodoCheckinHandlerWorker(myProject, Collections.singletonList(change), todoFilter, true);
+          worker = new TodoCheckinHandlerWorker(myProject, Collections.singletonList(change), todoFilter);
         worker.execute();
         final List<TodoItem> todoItems = worker.inOneList();
         if (todoItems != null && ! todoItems.isEmpty()) {

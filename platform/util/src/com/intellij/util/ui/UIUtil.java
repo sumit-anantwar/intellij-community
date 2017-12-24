@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.ui;
 
 import com.intellij.BundleBase;
@@ -29,6 +15,7 @@ import com.intellij.util.*;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.JBIterable;
 import com.intellij.util.containers.JBTreeTraverser;
+import com.intellij.util.ui.JBUI.ScaleContext;
 import com.intellij.util.ui.accessibility.ScreenReader;
 import org.intellij.lang.annotations.JdkConstants;
 import org.intellij.lang.annotations.Language;
@@ -62,6 +49,8 @@ import java.awt.*;
 import java.awt.event.*;
 import java.awt.font.FontRenderContext;
 import java.awt.font.GlyphVector;
+import java.awt.geom.AffineTransform;
+import java.awt.geom.Rectangle2D;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.im.InputContext;
 import java.awt.image.BufferedImage;
@@ -212,9 +201,7 @@ public class UIUtil {
 
   public static Couple<Color> getCellColors(JTable table, boolean isSel, int row, int column) {
     return Couple.of(isSel ? table.getSelectionForeground() : table.getForeground(),
-                                 isSel
-                                 ? table.getSelectionBackground()
-                                 : isUnderNimbusLookAndFeel() && row % 2 == 1 ? TRANSPARENT_COLOR : table.getBackground());
+                     isSel ? table.getSelectionBackground() : table.getBackground());
   }
 
   public static void fixOSXEditorBackground(@NotNull JTable table) {
@@ -234,6 +221,13 @@ public class UIUtil {
 
   public static boolean isDialogFont(Font font) {
     return Font.DIALOG.equals(font.getFamily(Locale.US));
+  }
+
+  public static boolean isScrolledToTheBottom(JComponent c) {
+    JScrollPane scrollPane = c != null ? getParentOfType(JScrollPane.class, c) : null;
+    if (scrollPane == null) return true;
+    Rectangle viewRect = scrollPane.getViewport().getViewRect();
+    return (c.getHeight() == viewRect.y + viewRect.height);
   }
 
   public enum FontSize {NORMAL, SMALL, MINI}
@@ -378,6 +372,13 @@ public class UIUtil {
    */
   public static boolean isJreHiDPI(@Nullable Component comp) {
     return isJreHiDPI(comp != null ? comp.getGraphicsConfiguration() : null);
+  }
+
+  /**
+   * Returns whether the JRE-managed HiDPI mode is enabled and the provided system scale context is HiDPI.
+   */
+  public static boolean isJreHiDPI(@Nullable ScaleContext ctx) {
+    return isJreHiDPIEnabled() && JBUI.isHiDPI(JBUI.sysScale(ctx));
   }
 
   private static Boolean jreHiDPI;
@@ -695,12 +696,12 @@ public class UIUtil {
     if (x == x1) {
       int minY = Math.min(y, y1);
       int maxY = Math.max(y, y1);
-      graphics.drawLine(x, minY + 1, x1, maxY - 1);
+      drawLine(graphics, x, minY + 1, x1, maxY - 1);
     }
     else if (y == y1) {
       int minX = Math.min(x, x1);
       int maxX = Math.max(x, x1);
-      graphics.drawLine(minX + 1, y, maxX - 1, y1);
+      drawLine(graphics, minX + 1, y, maxX - 1, y1);
     }
     else {
       drawLine(graphics, x, y, x1, y1);
@@ -710,6 +711,9 @@ public class UIUtil {
   public static boolean isReallyTypedEvent(KeyEvent e) {
     char c = e.getKeyChar();
     if (c < 0x20 || c == 0x7F) return false;
+
+    // Allow input of special characters on Windows in Persian keyboard layout using Ctrl+Shift+1..4 
+    if (SystemInfo.isWindows && c >= 0x200C && c <= 0x200F) return true;
 
     if (SystemInfo.isMac) {
       return !e.isMetaDown() && !e.isControlDown();
@@ -725,6 +729,41 @@ public class UIUtil {
     final Rectangle stringBounds = font.getStringBounds(string, frc).getBounds();
 
     return (int)(centerY - stringBounds.height / 2.0 - stringBounds.y);
+  }
+
+  public static void drawLabelDottedRectangle(@NotNull final JLabel label, @NotNull final Graphics g) {
+    drawLabelDottedRectangle(label, g, null);
+  }
+
+  public static void drawLabelDottedRectangle(@NotNull final JLabel label, @NotNull final Graphics g, @Nullable Rectangle bounds) {
+    if (bounds == null) {
+      bounds = getLabelTextBounds(label);
+    }
+    // JLabel draws the text relative to the baseline. So, we must ensure
+    // we draw the dotted rectangle relative to that same baseline.
+    FontMetrics fm = label.getFontMetrics(label.getFont());
+    int baseLine = label.getUI().getBaseline(label, label.getWidth(), label.getHeight());
+    int textY = baseLine - fm.getLeading() - fm.getAscent();
+    int textHeight = fm.getHeight();
+    drawDottedRectangle(g, bounds.x, textY, bounds.x + bounds.width - 1, textY + textHeight - 1);
+  }
+
+  public static Rectangle getLabelTextBounds(@NotNull final JLabel label) {
+    final Dimension size = label.getPreferredSize();
+    Icon icon = label.getIcon();
+    final Point point = new Point(0, 0);
+    final Insets insets = label.getInsets();
+    if (icon != null) {
+      point.x += label.getIconTextGap();
+      point.x += icon.getIconWidth();
+    }
+    point.x += insets.left;
+    point.y += insets.top;
+    size.width -= point.x;
+    size.width -= insets.right;
+    size.height -= insets.bottom;
+
+    return new Rectangle(point, size);
   }
 
   /**
@@ -765,6 +804,19 @@ public class UIUtil {
   }
 
   public static void drawLine(Graphics g, int x1, int y1, int x2, int y2) {
+    Stroke stroke = ((Graphics2D)g).getStroke();
+    if (stroke instanceof BasicStroke) {
+      if (x1 == x2) {
+        float lineWidth = ((BasicStroke)stroke).getLineWidth();
+        ((Graphics2D)g).fill(new Rectangle2D.Float(x1, Math.min(y1, y2), lineWidth, Math.abs(y1 - y2) + lineWidth));
+        return;
+      }
+      if (y1 == y2) {
+        float lineWidth = ((BasicStroke)stroke).getLineWidth();
+        ((Graphics2D)g).fill(new Rectangle2D.Float(Math.min(x1, x2), y1, Math.abs(x1 - x2) + lineWidth, lineWidth));
+        return;
+      }
+    }
     g.drawLine(x1, y1, x2, y2);
   }
 
@@ -994,12 +1046,6 @@ public class UIUtil {
   }
 
   public static Color getTreeSelectionBackground() {
-    if (isUnderNimbusLookAndFeel()) {
-      Color color = UIManager.getColor("Tree.selectionBackground");
-      if (color != null) return color;
-      color = UIManager.getColor("nimbusSelectionBackground");
-      if (color != null) return color;
-    }
     return UIManager.getColor("Tree.selectionBackground");
   }
 
@@ -1020,12 +1066,6 @@ public class UIUtil {
   }
 
   public static Color getTableSelectionBackground() {
-    if (isUnderNimbusLookAndFeel()) {
-      Color color = UIManager.getColor("Table[Enabled+Selected].textBackground");
-      if (color != null) return color;
-      color = UIManager.getColor("nimbusSelectionBackground");
-      if (color != null) return color;
-    }
     return UIManager.getColor("Table.selectionBackground");
   }
 
@@ -1153,9 +1193,6 @@ public class UIUtil {
   }
 
   public static Color getTableSelectionForeground() {
-    if (isUnderNimbusLookAndFeel()) {
-      return UIManager.getColor("Table[Enabled+Selected].textForeground");
-    }
     return UIManager.getColor("Table.selectionForeground");
   }
 
@@ -1172,11 +1209,6 @@ public class UIUtil {
   }
 
   public static Color getListBackground() {
-    if (isUnderNimbusLookAndFeel()) {
-      final Color color = UIManager.getColor("List.background");
-      //noinspection UseJBColor
-      return new Color(color.getRed(), color.getGreen(), color.getBlue(), color.getAlpha());
-    }
     // Under GTK+ L&F "Table.background" often has main panel color, which looks ugly
     return isUnderGTKLookAndFeel() ? getTreeTextBackground() : UIManager.getColor("List.background");
   }
@@ -1214,9 +1246,6 @@ public class UIUtil {
   }
 
   public static Color getListSelectionBackground() {
-    if (isUnderNimbusLookAndFeel()) {
-      return UIManager.getColor("List[Selected].textBackground");  // Nimbus
-    }
     return UIManager.getColor("List.selectionBackground");
   }
 
@@ -1295,11 +1324,8 @@ public class UIUtil {
 
   public static Color getSeparatorColor() {
     Color separatorColor = getSeparatorForeground();
-    if (isUnderAlloyLookAndFeel()) {
+    if (false) {
       separatorColor = getSeparatorShadow();
-    }
-    if (isUnderNimbusLookAndFeel()) {
-      separatorColor = getSeparatorColorUnderNimbus();
     }
     //under GTK+ L&F colors set hard
     if (isUnderGTKLookAndFeel()) {
@@ -1403,7 +1429,6 @@ public class UIUtil {
 
   public static Icon getTreeSelectedCollapsedIcon() {
     if (isUnderAquaBasedLookAndFeel() ||
-        isUnderNimbusLookAndFeel() ||
         isUnderGTKLookAndFeel() ||
         isUnderDarcula() ||
         isUnderIntelliJLaF() &&
@@ -1415,7 +1440,6 @@ public class UIUtil {
 
   public static Icon getTreeSelectedExpandedIcon() {
     if (isUnderAquaBasedLookAndFeel() ||
-        isUnderNimbusLookAndFeel() ||
         isUnderGTKLookAndFeel() ||
         isUnderDarcula() ||
         isUnderIntelliJLaF() &&
@@ -1441,14 +1465,24 @@ public class UIUtil {
     return UIManager.getColor("OptionPane.background");
   }
 
+  /**
+   * Alloy Look-n-Feel is deprecated and does not supported by IntelliJ Platform
+   * @return false
+   * @deprecated
+   */
   @SuppressWarnings("HardCodedStringLiteral")
   public static boolean isUnderAlloyLookAndFeel() {
-    return UIManager.getLookAndFeel().getName().contains("Alloy");
+    return false;
   }
 
+  /**
+   * Alloy Look-n-Feel is deprecated and does not supported by IntelliJ Platform
+   * @return false
+   * @deprecated
+   */
   @SuppressWarnings("HardCodedStringLiteral")
   public static boolean isUnderAlloyIDEALookAndFeel() {
-    return isUnderAlloyLookAndFeel() && UIManager.getLookAndFeel().getName().contains("IDEA");
+    return false;
   }
 
   @SuppressWarnings("HardCodedStringLiteral")
@@ -1462,18 +1496,29 @@ public class UIUtil {
   }
 
   @SuppressWarnings("HardCodedStringLiteral")
-  public static boolean isUnderNimbusLookAndFeel() {
-    return UIManager.getLookAndFeel().getName().contains("Nimbus");
-  }
-
-  @SuppressWarnings("HardCodedStringLiteral")
   public static boolean isUnderAquaLookAndFeel() {
     return SystemInfo.isMac && UIManager.getLookAndFeel().getName().contains("Mac OS X");
   }
 
+
+  /**
+   * Nimbus Look-n-Feel is deprecated and does not supported by IntelliJ Platform
+   * @return false
+   * @deprecated
+   */
+  @SuppressWarnings("HardCodedStringLiteral")
+  public static boolean isUnderNimbusLookAndFeel() {
+    return false;
+  }
+
+  /**
+   * JGoodies Look-n-Feel is deprecated and does not supported by IntelliJ Platform
+   * @return false
+   * @deprecated
+   */
   @SuppressWarnings("HardCodedStringLiteral")
   public static boolean isUnderJGoodiesLookAndFeel() {
-    return UIManager.getLookAndFeel().getName().contains("JGoodies");
+    return false;
   }
 
   @SuppressWarnings("HardCodedStringLiteral")
@@ -1566,7 +1611,9 @@ public class UIUtil {
   }
 
   public static int getListCellHPadding() {
-    return isUnderNativeMacLookAndFeel() ? 7 : 2;
+    return isUnderDefaultMacTheme() ? 8 :
+           isUnderWin10LookAndFeel() ? 2 :
+           7;
   }
 
   public static int getListCellVPadding() {
@@ -1574,11 +1621,12 @@ public class UIUtil {
   }
 
   public static Insets getListCellPadding() {
-    return new Insets(getListCellVPadding(), getListCellHPadding(), getListCellVPadding(), getListCellHPadding());
+    return JBUI.insets(getListCellVPadding(), getListCellHPadding());
   }
 
   public static Insets getListViewportPadding() {
-    return isUnderNativeMacLookAndFeel() ? new Insets(1, 0, 1, 0) : new Insets(5, 5, 5, 5);
+    return isUnderNativeMacLookAndFeel() ? JBUI.insets(1, 0) :
+           isUnderWin10LookAndFeel() ? JBUI.emptyInsets() : JBUI.insets(5);
   }
 
   public static boolean isToUseDottedCellBorder() {
@@ -1762,25 +1810,25 @@ public class UIUtil {
     g.fillRect(startX, 3, endX - startX, height - 5);
 
     if (drawRound) {
-      g.drawLine(startX - 1, 4, startX - 1, height - 4);
-      g.drawLine(endX, 4, endX, height - 4);
+      drawLine(g ,startX - 1, 4, startX - 1, height - 4);
+      drawLine(g ,endX, 4, endX, height - 4);
 
       g.setColor(new Color(100, 100, 100, 50));
-      g.drawLine(startX - 1, 4, startX - 1, height - 4);
-      g.drawLine(endX, 4, endX, height - 4);
+      drawLine(g ,startX - 1, 4, startX - 1, height - 4);
+      drawLine(g ,endX, 4, endX, height - 4);
 
-      g.drawLine(startX, 3, endX - 1, 3);
-      g.drawLine(startX, height - 3, endX - 1, height - 3);
+      drawLine(g ,startX, 3, endX - 1, 3);
+      drawLine(g ,startX, height - 3, endX - 1, height - 3);
     }
 
     config.restore();
   }
 
   public static void drawRectPickedOut(Graphics2D g, int x, int y, int w, int h) {
-    g.drawLine(x + 1, y, x + w - 1, y);
-    g.drawLine(x + w, y + 1, x + w, y + h - 1);
-    g.drawLine(x + w - 1, y + h, x + 1, y + h);
-    g.drawLine(x, y + 1, x, y + h - 1);
+    drawLine(g ,x + 1, y, x + w - 1, y);
+    drawLine(g ,x + w, y + 1, x + w, y + h - 1);
+    drawLine(g ,x + w - 1, y + h, x + 1, y + h);
+    drawLine(g ,x, y + 1, x, y + h - 1);
   }
 
   private static void drawBoringDottedLine(final Graphics2D g,
@@ -1813,8 +1861,8 @@ public class UIUtil {
     g.setColor(fgColor != null ? fgColor : oldColor);
     // Now draw bold line segments
     for (int dotXi = (startX / step + startPosCorrection) * step; dotXi < endX; dotXi += step) {
-      g.drawLine(dotXi, lineY, dotXi + 1, lineY);
-      g.drawLine(dotXi, lineY + 1, dotXi + 1, lineY + 1);
+      drawLine(g ,dotXi, lineY, dotXi + 1, lineY);
+      drawLine(g ,dotXi, lineY + 1, dotXi + 1, lineY + 1);
     }
 
     // restore color
@@ -1839,16 +1887,11 @@ public class UIUtil {
                                 boolean toolWindow,
                                 boolean drawTopLine,
                                 boolean drawBottomLine) {
-    height++;
     GraphicsConfig config = GraphicsUtil.disableAAPainting(g);
     try {
       g.setColor(getPanelBackground());
       g.fillRect(x, 0, width, height);
 
-      boolean jmHiDPI = isJreHiDPI((Graphics2D)g);
-      if (jmHiDPI) {
-        ((Graphics2D)g).setStroke(new BasicStroke(2f));
-      }
       ((Graphics2D)g).setPaint(getGradientPaint(0, 0, Gray.x00.withAlpha(5), 0, height, Gray.x00.withAlpha(20)));
       g.fillRect(x, 0, width, height);
 
@@ -1857,8 +1900,8 @@ public class UIUtil {
         g.fillRect(x, 0, width, height);
       }
       g.setColor(SystemInfo.isMac && isUnderIntelliJLaF() ? Gray.xC9 : Gray.x00.withAlpha(toolWindow ? 90 : 50));
-      if (drawTopLine) g.drawLine(x, 0, width, 0);
-      if (drawBottomLine) g.drawLine(x, height - (jmHiDPI ? 1 : 2), width, height - (jmHiDPI ? 1 : 2));
+      if (drawTopLine) drawLine(g ,x, 0, width, 0);
+      if (drawBottomLine) drawLine(g ,x, height - 1, width, height - 1);
 
       if (SystemInfo.isMac && isUnderIntelliJLaF()) {
         g.setColor(Gray.xC9);
@@ -1866,7 +1909,7 @@ public class UIUtil {
         g.setColor(isUnderDarcula() ? CONTRAST_BORDER_COLOR : Gray.xFF.withAlpha(100));
       }
 
-      g.drawLine(x, 0, width, 0);
+      drawLine(g ,x, 0, width, 0);
     } finally {
       config.restore();
     }
@@ -1882,10 +1925,10 @@ public class UIUtil {
     g.setColor(fgColor);
     for (int dot = start; dot < end; dot += 3) {
       if (horizontal) {
-        g.drawLine(dot, xOrY, dot, xOrY);
+        drawLine(g ,dot, xOrY, dot, xOrY);
       }
       else {
-        g.drawLine(xOrY, dot, xOrY, dot);
+        drawLine(g ,xOrY, dot, xOrY, dot);
       }
     }
   }
@@ -2047,10 +2090,8 @@ public class UIUtil {
       dw = dstBounds.width;
       dh = dstBounds.height;
     }
-    if (dw == -1 && dh == -1) {
-      dw = ImageUtil.getUserWidth(image);
-      dh = ImageUtil.getUserHeight(image);
-    }
+    boolean dstSizeUndefined = (dw == -1 && dh == -1);
+
     int sx = 0;
     int sy = 0;
     int sw = -1;
@@ -2061,11 +2102,21 @@ public class UIUtil {
       sw = srcBounds.width;
       sh = srcBounds.height;
     }
-    if (sw == -1 && sh == -1) {
-      sw = ImageUtil.getRealWidth(image);
-      sh = ImageUtil.getRealHeight(image);
+    boolean srcSizeUndefined = (sw == -1 && sh == -1);
+
+    if (dstSizeUndefined && srcSizeUndefined) {
+      drawImage(g, image, null, dx, dy, -1, -1, observer);
+    } else {
+      if (dstSizeUndefined) {
+        dw = ImageUtil.getUserWidth(image);
+        dh = ImageUtil.getUserHeight(image);
+      }
+      if (srcSizeUndefined) {
+        sw = ImageUtil.getRealWidth(image);
+        sh = ImageUtil.getRealHeight(image);
+      }
+      g.drawImage(drawImage, dx, dy, dx + dw, dy + dh, sx, sy, sx + sw, sy + sh, observer);
     }
-    g.drawImage(drawImage, dx, dy, dx + dw, dy + dh, sx, sy, sx + sw, sy + sh, observer);
   }
 
   /**
@@ -2076,44 +2127,59 @@ public class UIUtil {
    */
   @Deprecated
   public static void drawImage(Graphics g, Image image, int x, int y, int width, int height, ImageObserver observer) {
+    drawImage(g, image, null, x, y, width, height, observer);
+  }
+
+  private static void drawImage(Graphics g, Image image, @Nullable BufferedImageOp op, int x, int y, int width, int height, ImageObserver observer) {
+    double scale = 1d;
+    Graphics2D invG = null;
+    boolean srcSizeUndefined = (width == -1 && height == -1);
+    int dstw = ImageUtil.getUserWidth(image);
+    int dsth = ImageUtil.getUserHeight(image);
+
     if (image instanceof JBHiDPIScaledImage) {
-      Image img = ((JBHiDPIScaledImage)image).getDelegate();
-      if (img == null) {
-        img = image;
+      JBHiDPIScaledImage hidpiImage = (JBHiDPIScaledImage)image;
+      Image delegate = hidpiImage.getDelegate();
+      if (delegate != null) image = delegate;
+      scale = hidpiImage.getScale();
+
+      if (srcSizeUndefined) {
+        AffineTransform tx = ((Graphics2D)g).getTransform();
+        if (scale == tx.getScaleX()) {
+          // The image has the same original scale as the graphics scale. However, the real image
+          // scale - userSize/realSize - can suffer from inaccuracy due to the image user size
+          // rounding to int (userSize = (int)realSize/originalImageScale). This may case quality
+          // loss if the image is drawn via Graphics.drawImage(image, <srcRect>, <dstRect>)
+          // due to scaling in Graphics. To avoid that, the image should be drawn directly via
+          // Graphics.drawImage(image, 0, 0) on the unscaled Graphics.
+          double gScaleX = tx.getScaleX();
+          double gScaleY = tx.getScaleY();
+          tx.scale(1 / gScaleX, 1 / gScaleY);     // inverse the scale
+          tx.translate(x * gScaleX, y * gScaleY); // scale x/y with double precision
+          invG = (Graphics2D)g.create();
+          invG.setTransform(tx);
+        }
       }
-      int dstw = width;
-      int dsth = height;
-      if (width == -1 && height == -1) {
-        dstw = ImageUtil.getUserWidth(image);
-        dsth = ImageUtil.getUserHeight(image);
-      }
-      int srcw = ImageUtil.getRealWidth(image);
-      int srch = ImageUtil.getRealHeight(image);
-      g.drawImage(img, x, y, x + dstw, y + dsth, 0, 0, srcw, srch, observer);
     }
-    else if (width == -1 && height == -1) {
-      g.drawImage(image, x, y, observer);
+    if (op != null && image instanceof BufferedImage) {
+      image = op.filter((BufferedImage)image, null);
+    }
+    if (invG != null) {
+      invG.drawImage(image, 0, 0, observer);
+      invG.dispose();
+    }
+    else if (srcSizeUndefined) {
+      g.drawImage(image, x, y, dstw, dsth, observer);
     }
     else {
-      g.drawImage(image, x, y, x + width, y + height, 0, 0, width, height, observer);
+      int srcw = (int)Math.ceil(width * scale);
+      int srch = (int)Math.ceil(height * scale);
+      g.drawImage(image, x, y, x + width, y + height, 0, 0, srcw, srch, observer);
     }
   }
 
   public static void drawImage(Graphics g, BufferedImage image, BufferedImageOp op, int x, int y) {
-    if (image instanceof JBHiDPIScaledImage) {
-      Image img = ((JBHiDPIScaledImage)image).getDelegate();
-      if (img == null) {
-        img = image;
-      }
-      if (op != null && img instanceof BufferedImage) img = op.filter((BufferedImage)img, null);
-      int dstw = ImageUtil.getUserWidth(image);
-      int dsth = ImageUtil.getUserHeight(image);
-      int srcw = ImageUtil.getRealWidth(image);
-      int srch = ImageUtil.getRealHeight(image);
-      g.drawImage(img, x, y, x + dstw, y + dsth, 0, 0, srcw, srch, null);
-    } else {
-      ((Graphics2D)g).drawImage(image, op, x, y);
-    }
+    drawImage(g, image, op, x, y, -1, -1, null);
   }
 
   public static void paintWithXorOnRetina(@NotNull Dimension size, @NotNull Graphics g, Consumer<Graphics2D> paintRoutine) {
@@ -2210,6 +2276,7 @@ public class UIUtil {
     SwingUtilities.invokeLater(new Runnable() {
       @Override
       public void run() {
+        //noinspection CollectionAddedToSelf
         queue.offer(queue);
       }
     });
@@ -2429,7 +2496,6 @@ public class UIUtil {
 
   public static boolean isStandardMenuLAF() {
     return isWinLafOnVista() ||
-           isUnderNimbusLookAndFeel() ||
            isUnderGTKLookAndFeel();
   }
 
@@ -2646,7 +2712,7 @@ public class UIUtil {
     return getFontWithFallback(font.getFamily(), font.getStyle(), font.getSize());
   }
 
-  public static FontUIResource getFontWithFallback(@NotNull String familyName, @JdkConstants.FontStyle int style, int size) {
+  public static FontUIResource getFontWithFallback(@Nullable String familyName, @JdkConstants.FontStyle int style, int size) {
     Font fontWithFallback = new StyleContext().getFont(familyName, style, size);
     return fontWithFallback instanceof FontUIResource ? (FontUIResource)fontWithFallback : new FontUIResource(fontWithFallback);
   }
@@ -3147,12 +3213,12 @@ public class UIUtil {
 
   @NotNull
   public static JBTreeTraverser<Component> uiTraverser(@Nullable Component component) {
-    return new JBTreeTraverser<Component>(COMPONENT_CHILDREN).withRoot(component);
+    return UI_TRAVERSER.withRoot(component);
   }
 
   public static final Key<Iterable<? extends Component>> NOT_IN_HIERARCHY_COMPONENTS = Key.create("NOT_IN_HIERARCHY_COMPONENTS");
 
-  private static final Function<Component, JBIterable<Component>> COMPONENT_CHILDREN = new Function<Component, JBIterable<Component>>() {
+  private static final JBTreeTraverser<Component> UI_TRAVERSER = JBTreeTraverser.from(new Function<Component, JBIterable<Component>>() {
     @Override
     public JBIterable<Component> fun(@NotNull Component c) {
       JBIterable<Component> result;
@@ -3180,7 +3246,7 @@ public class UIUtil {
       }
       return result;
     }
-  };
+  });
 
   private static final Function.Mono<Component> COMPONENT_PARENT = new Function.Mono<Component>() {
     @Override
@@ -3245,6 +3311,8 @@ public class UIUtil {
     private boolean myDrawShadow;
     private Color myShadowColor;
     private float myLineSpacing;
+    private Font myFont;
+    private Color myColor;
 
     public TextPainter() {
       myDrawShadow = /*isUnderAquaLookAndFeel() ||*/ isUnderDarcula();
@@ -3252,31 +3320,41 @@ public class UIUtil {
       myLineSpacing = 1.0f;
     }
 
-    public TextPainter withShadow(final boolean drawShadow) {
+    public TextPainter withShadow(boolean drawShadow) {
       myDrawShadow = drawShadow;
       return this;
     }
 
-    public TextPainter withShadow(final boolean drawShadow, final Color shadowColor) {
+    public TextPainter withShadow(boolean drawShadow, Color shadowColor) {
       myDrawShadow = drawShadow;
       myShadowColor = shadowColor;
       return this;
     }
 
-    public TextPainter withLineSpacing(final float lineSpacing) {
+    public TextPainter withLineSpacing(float lineSpacing) {
       myLineSpacing = lineSpacing;
       return this;
     }
 
-    public TextPainter appendLine(final String text) {
+    public TextPainter withColor(Color color) {
+      myColor = color;
+      return this;
+    }
+
+    public TextPainter withFont(Font font) {
+      myFont = font;
+      return this;
+    }
+
+    public TextPainter appendLine(String text) {
       if (text == null || text.isEmpty()) return this;
       myLines.add(Pair.create(text, new LineInfo()));
       return this;
     }
 
-    public TextPainter underlined(@Nullable final Color color) {
+    public TextPainter underlined(@Nullable Color color) {
       if (!myLines.isEmpty()) {
-        final LineInfo info = myLines.get(myLines.size() - 1).getSecond();
+        LineInfo info = myLines.get(myLines.size() - 1).getSecond();
         info.underlined = true;
         info.underlineColor = color;
       }
@@ -3284,9 +3362,9 @@ public class UIUtil {
       return this;
     }
 
-    public TextPainter withBullet(final char c) {
+    public TextPainter withBullet(char c) {
       if (!myLines.isEmpty()) {
-        final LineInfo info = myLines.get(myLines.size() - 1).getSecond();
+        LineInfo info = myLines.get(myLines.size() - 1).getSecond();
         info.withBullet = true;
         info.bulletChar = c;
       }
@@ -3326,119 +3404,134 @@ public class UIUtil {
       final int[] maxWidth = {0};
       final int[] height = {0};
       final int[] maxBulletWidth = {0};
-      ContainerUtil.process(myLines, new Processor<Pair<String, LineInfo>>() {
-        @Override
-        public boolean process(final Pair<String, LineInfo> pair) {
-          final LineInfo info = pair.getSecond();
-          Font old = null;
-          if (info.smaller) {
-            old = g.getFont();
-            g.setFont(old.deriveFont(old.getSize() * 0.70f));
-          }
-
-          final FontMetrics fm = g.getFontMetrics();
-
-          final int bulletWidth = info.withBullet ? fm.stringWidth(" " + info.bulletChar) : 0;
-          maxBulletWidth[0] = Math.max(maxBulletWidth[0], bulletWidth);
-
-          maxWidth[0] = Math.max(fm.stringWidth(pair.getFirst().replace("<shortcut>", "").replace("</shortcut>", "") + bulletWidth), maxWidth[0]);
-          height[0] += (fm.getHeight() + fm.getLeading()) * myLineSpacing;
-
-          if (old != null) {
-            g.setFont(old);
-          }
-
-          return true;
-        }
-      });
-
-      final Couple<Integer> position = _position.fun(maxWidth[0] + 20, height[0]);
-      assert position != null;
-
-      final int[] yOffset = {position.getSecond()};
-      ContainerUtil.process(myLines, new Processor<Pair<String, LineInfo>>() {
-        @Override
-        public boolean process(final Pair<String, LineInfo> pair) {
-          final LineInfo info = pair.getSecond();
-          String text = pair.first;
-          String shortcut = "";
-          if (pair.first.contains("<shortcut>")) {
-            shortcut = text.substring(text.indexOf("<shortcut>") + "<shortcut>".length(), text.indexOf("</shortcut>"));
-            text = text.substring(0, text.indexOf("<shortcut>"));
-          }
-
-          Font old = null;
-          if (info.smaller) {
-            old = g.getFont();
-            g.setFont(old.deriveFont(old.getSize() * 0.70f));
-          }
-
-          final int x = position.getFirst() + maxBulletWidth[0] + 10;
-
-          final FontMetrics fm = g.getFontMetrics();
-          int xOffset = x;
-          if (info.center) {
-            xOffset = x + (maxWidth[0] - fm.stringWidth(text)) / 2;
-          }
-
-          if (myDrawShadow) {
-            int xOff = isUnderDarcula() ? 1 : 0;
-            int yOff = 1;
-            Color oldColor = g.getColor();
-            g.setColor(myShadowColor);
-
-            if (info.withBullet) {
-              g.drawString(info.bulletChar + " ", x - fm.stringWidth(" " + info.bulletChar) + xOff, yOffset[0] + yOff);
+      Font oldFont = null;
+      Color oldColor = null;
+      if (myFont != null) {
+        oldFont = g.getFont();
+        g.setFont(myFont);
+      }
+      if (myColor != null) {
+        oldColor = g.getColor();
+        g.setColor(myColor);
+      }
+      try {
+        ContainerUtil.process(myLines, new Processor<Pair<String, LineInfo>>() {
+          @Override
+          public boolean process(final Pair<String, LineInfo> pair) {
+            final LineInfo info = pair.getSecond();
+            Font old = null;
+            if (info.smaller) {
+              old = g.getFont();
+              g.setFont(old.deriveFont(old.getSize() * 0.70f));
             }
 
-            g.drawString(text, xOffset + xOff, yOffset[0] + yOff);
-            g.setColor(oldColor);
-          }
+            final FontMetrics fm = g.getFontMetrics();
 
-          if (info.withBullet) {
-            g.drawString(info.bulletChar + " ", x - fm.stringWidth(" " + info.bulletChar), yOffset[0]);
-          }
+            final int bulletWidth = info.withBullet ? fm.stringWidth(" " + info.bulletChar) : 0;
+            maxBulletWidth[0] = Math.max(maxBulletWidth[0], bulletWidth);
 
-          g.drawString(text, xOffset, yOffset[0]);
-          if (!StringUtil.isEmpty(shortcut)) {
-            Color oldColor = g.getColor();
-            g.setColor(new JBColor(new Color(82, 99, 155),
-                                   new Color(88, 157, 246)));
-            g.drawString(shortcut, xOffset + fm.stringWidth(text + (isUnderDarcula() ? " " : "")), yOffset[0]);
-            g.setColor(oldColor);
-          }
+            maxWidth[0] = Math.max(fm.stringWidth(pair.getFirst().replace("<shortcut>", "").replace("</shortcut>", "") + bulletWidth), maxWidth[0]);
+            height[0] += (fm.getHeight() + fm.getLeading()) * myLineSpacing;
 
-          if (info.underlined) {
-            Color c = null;
-            if (info.underlineColor != null) {
-              c = g.getColor();
-              g.setColor(info.underlineColor);
+            if (old != null) {
+              g.setFont(old);
             }
 
-            g.drawLine(x - maxBulletWidth[0] - 10, yOffset[0] + fm.getDescent(), x + maxWidth[0] + 10, yOffset[0] + fm.getDescent());
-            if (c != null) {
-              g.setColor(c);
+            return true;
+          }
+        });
 
+        final Couple<Integer> position = _position.fun(maxWidth[0] + 20, height[0]);
+        assert position != null;
+
+        final int[] yOffset = {position.getSecond()};
+        ContainerUtil.process(myLines, new Processor<Pair<String, LineInfo>>() {
+          @Override
+          public boolean process(final Pair<String, LineInfo> pair) {
+            final LineInfo info = pair.getSecond();
+            String text = pair.first;
+            String shortcut = "";
+            if (pair.first.contains("<shortcut>")) {
+              shortcut = text.substring(text.indexOf("<shortcut>") + "<shortcut>".length(), text.indexOf("</shortcut>"));
+              text = text.substring(0, text.indexOf("<shortcut>"));
+            }
+
+            Font old = null;
+            if (info.smaller) {
+              old = g.getFont();
+              g.setFont(old.deriveFont(old.getSize() * 0.70f));
+            }
+
+            final int x = position.getFirst() + maxBulletWidth[0] + 10;
+
+            final FontMetrics fm = g.getFontMetrics();
+            int xOffset = x;
+            if (info.center) {
+              xOffset = x + (maxWidth[0] - fm.stringWidth(text)) / 2;
             }
 
             if (myDrawShadow) {
-              c = g.getColor();
+              int xOff = isUnderDarcula() ? 1 : 0;
+              int yOff = 1;
+              Color oldColor = g.getColor();
               g.setColor(myShadowColor);
-              g.drawLine(x - maxBulletWidth[0] - 10, yOffset[0] + fm.getDescent() + 1, x + maxWidth[0] + 10,
-                         yOffset[0] + fm.getDescent() + 1);
-              g.setColor(c);
+
+              if (info.withBullet) {
+                g.drawString(info.bulletChar + " ", x - fm.stringWidth(" " + info.bulletChar) + xOff, yOffset[0] + yOff);
+              }
+
+              g.drawString(text, xOffset + xOff, yOffset[0] + yOff);
+              g.setColor(oldColor);
             }
+
+            if (info.withBullet) {
+              g.drawString(info.bulletChar + " ", x - fm.stringWidth(" " + info.bulletChar), yOffset[0]);
+            }
+
+            g.drawString(text, xOffset, yOffset[0]);
+            if (!StringUtil.isEmpty(shortcut)) {
+              Color oldColor = g.getColor();
+              g.setColor(new JBColor(new Color(82, 99, 155),
+                                     new Color(88, 157, 246)));
+              g.drawString(shortcut, xOffset + fm.stringWidth(text + (isUnderDarcula() ? " " : "")), yOffset[0]);
+              g.setColor(oldColor);
+            }
+
+            if (info.underlined) {
+              Color c = null;
+              if (info.underlineColor != null) {
+                c = g.getColor();
+                g.setColor(info.underlineColor);
+              }
+
+              drawLine(g ,x - maxBulletWidth[0] - 10, yOffset[0] + fm.getDescent(), x + maxWidth[0] + 10, yOffset[0] + fm.getDescent());
+              if (c != null) {
+                g.setColor(c);
+              }
+
+              if (myDrawShadow) {
+                c = g.getColor();
+                g.setColor(myShadowColor);
+                drawLine(g ,x - maxBulletWidth[0] - 10, yOffset[0] + fm.getDescent() + 1, x + maxWidth[0] + 10,
+                           yOffset[0] + fm.getDescent() + 1);
+                g.setColor(c);
+              }
+            }
+
+            yOffset[0] += (fm.getHeight() + fm.getLeading()) * myLineSpacing;
+
+            if (old != null) {
+              g.setFont(old);
+            }
+
+            return true;
           }
-
-          yOffset[0] += (fm.getHeight() + fm.getLeading()) * myLineSpacing;
-
-          if (old != null) {
-            g.setFont(old);
-          }
-
-          return true;
-        }
-      });
+        });
+      }
+      finally {
+        if (oldFont != null) g.setFont(oldFont);
+        if (oldColor != null) g.setColor(oldColor);
+      }
     }
 
     private static class LineInfo {

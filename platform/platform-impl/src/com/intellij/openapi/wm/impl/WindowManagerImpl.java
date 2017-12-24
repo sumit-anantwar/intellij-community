@@ -22,7 +22,6 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.ex.ActionManagerEx;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ex.ApplicationInfoEx;
 import com.intellij.openapi.components.*;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -478,9 +477,7 @@ public final class WindowManagerImpl extends WindowManagerEx implements NamedCom
 
   // this method is called when there is some opened project (IDE will not open Welcome Frame, but project)
   public void showFrame() {
-    final IdeFrameImpl frame = new IdeFrameImpl(ApplicationInfoEx.getInstanceEx(),
-                                                myActionManager, myDataManager,
-                                                ApplicationManager.getApplication());
+    final IdeFrameImpl frame = new IdeFrameImpl(myActionManager, myDataManager, ApplicationManager.getApplication());
     myProjectToFrame.put(null, frame);
 
     Rectangle frameBounds = myDefaultFrameInfo.getBounds();
@@ -507,8 +504,7 @@ public final class WindowManagerImpl extends WindowManagerEx implements NamedCom
 
     IdeFrameImpl frame = myProjectToFrame.remove(null);
     if (frame == null) {
-      frame = new IdeFrameImpl(ApplicationInfoEx.getInstanceEx(), myActionManager,
-                               myDataManager, ApplicationManager.getApplication());
+      frame = new IdeFrameImpl(myActionManager, myDataManager, ApplicationManager.getApplication());
     }
 
     final FrameInfo frameInfo = ProjectFrameBounds.getInstance(project).getRawFrameInfo();
@@ -520,9 +516,13 @@ public final class WindowManagerImpl extends WindowManagerEx implements NamedCom
       myDefaultFrameInfo.setBounds(FrameBoundsConverter.convertFromDeviceSpace(rawBounds));
     }
 
-    Rectangle bounds = myDefaultFrameInfo.getBounds();
-    if (bounds != null) {
-      frame.setBounds(bounds);
+    if (!(FrameState.isMaximized(frame.getExtendedState()) || FrameState.isFullScreen(frame)) ||
+        !FrameState.isMaximized(myDefaultFrameInfo.getExtendedState())) // going to quit maximized
+    {
+      Rectangle bounds = myDefaultFrameInfo.getBounds();
+      if (bounds != null) {
+        frame.setBounds(bounds);
+      }
     }
     frame.setExtendedState(myDefaultFrameInfo.getExtendedState());
 
@@ -760,7 +760,7 @@ public final class WindowManagerImpl extends WindowManagerEx implements NamedCom
     public static Rectangle convertFromDeviceSpace(@NotNull Rectangle bounds) {
       Rectangle b = bounds.getBounds();
       if (!shouldConvert()) return b;
-      
+
       try {
         for (GraphicsDevice gd : GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices()) {
           Rectangle devBounds = gd.getDefaultConfiguration().getBounds(); // in user space
@@ -786,7 +786,7 @@ public final class WindowManagerImpl extends WindowManagerEx implements NamedCom
     public static Rectangle convertToDeviceSpace(GraphicsConfiguration gc, @NotNull Rectangle bounds) {
       Rectangle b = bounds.getBounds();
       if (!shouldConvert()) return b;
-      
+
       try {
         scaleUp(b, gc);
       }

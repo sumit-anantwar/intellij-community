@@ -51,8 +51,7 @@ public class JsonSchemaVariantsTreeBuilder {
     // set root's position since this children are just variants of root
     root.getChildren().forEach(node -> node.setSteps(ContainerUtil.notNullize(position)));
 
-    final ArrayDeque<JsonSchemaTreeNode> queue = new ArrayDeque<>();
-    queue.addAll(root.getChildren());
+    final ArrayDeque<JsonSchemaTreeNode> queue = new ArrayDeque<>(root.getChildren());
 
     while (!queue.isEmpty()) {
       final JsonSchemaTreeNode node = queue.removeFirst();
@@ -358,7 +357,6 @@ public class JsonSchemaVariantsTreeBuilder {
     object.mergeValues(other);
     object.mergeValues(base);
     object.setRef(other.getRef());
-    object.setDefinitions(base.getDefinitions());
     return object;
   }
 

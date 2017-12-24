@@ -61,7 +61,6 @@ import com.intellij.openapi.util.UserDataHolderBase;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.openapi.wm.ex.IdeFocusTraversalPolicy;
 import com.intellij.ui.HintHint;
-import com.intellij.ui.JBProgressBar;
 import com.intellij.ui.JBSplitter;
 import com.intellij.ui.LightweightHint;
 import com.intellij.ui.components.JBPanelWithEmptyText;
@@ -341,7 +340,7 @@ public abstract class DiffRequestProcessor implements Disposable {
     return window != null && window.isFocused();
   }
 
-  private boolean isFocused() {
+  protected boolean isFocused() {
     return DiffUtil.isFocusedComponent(myProject, myContentPanel) ||
            DiffUtil.isFocusedComponent(myProject, myToolbar.getComponent());
   }
@@ -403,8 +402,7 @@ public abstract class DiffRequestProcessor implements Disposable {
   protected void collectToolbarActions(@Nullable List<AnAction> viewerActions) {
     myToolbarGroup.removeAll();
 
-    List<AnAction> navigationActions = new ArrayList<>();
-    navigationActions.addAll(getNavigationActions());
+    List<AnAction> navigationActions = new ArrayList<>(getNavigationActions());
     navigationActions.add(myOpenInEditorAction);
     navigationActions.add(new MyChangeDiffToolAction());
     DiffUtil.addActionBlock(myToolbarGroup,
@@ -878,7 +876,7 @@ public abstract class DiffRequestProcessor implements Disposable {
     }
   }
 
-  private static class MyProgressBar extends JBProgressBar {
+  private static class MyProgressBar extends JProgressBar {
     private int myProgressCount = 0;
 
     public MyProgressBar() {

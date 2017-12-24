@@ -19,7 +19,6 @@ import com.intellij.lang.ASTNode;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.progress.EmptyProgressIndicator;
 import com.intellij.openapi.progress.ProcessCanceledException;
@@ -66,7 +65,6 @@ import org.jetbrains.annotations.Nullable;
 import java.util.*;
 
 public class PomModelImpl extends UserDataHolderBase implements PomModel {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.pom.core.impl.PomModelImpl");
   private final Project myProject;
   private final Map<Class<? extends PomModelAspect>, PomModelAspect> myAspects = new HashMap<>();
   private final Map<PomModelAspect, List<PomModelAspect>> myIncidence = new HashMap<>();
@@ -230,9 +228,7 @@ public class PomModelImpl extends UserDataHolderBase implements PomModel {
       while (blocksIterator.hasPrevious()) {
         final Pair<PomModelAspect, PomTransaction> pair = blocksIterator.previous();
         if (pomModelAspect == pair.getFirst() && // aspect dependence
-            PsiTreeUtil.isAncestor(pair.getSecond().getChangeScope(), transaction.getChangeScope(), false) &&
-            // target scope contain current
-            getContainingFileByTree(pair.getSecond().getChangeScope()) != null  // target scope physical
+            PsiTreeUtil.isAncestor(getContainingFileByTree(pair.getSecond().getChangeScope()), transaction.getChangeScope(), false) // same file
           ) {
           return pair;
         }
@@ -247,6 +243,14 @@ public class PomModelImpl extends UserDataHolderBase implements PomModel {
     final PsiToDocumentSynchronizer synchronizer = manager.getSynchronizer();
     final PsiFile containingFileByTree = getContainingFileByTree(transaction.getChangeScope());
     Document document = containingFileByTree != null ? manager.getCachedDocument(containingFileByTree) : null;
+
+    boolean isFromCommit = ApplicationManager.getApplication().isDispatchThread() &&
+                           ((PsiDocumentManagerBase)PsiDocumentManager.getInstance(myProject)).isCommitInProgress();
+    boolean isPhysicalPsiChange = containingFileByTree != null && !isFromCommit && !synchronizer.isIgnorePsiEvents();
+    if (isPhysicalPsiChange) {
+      reparseParallelTrees(containingFileByTree, synchronizer);
+    }
+
     boolean docSynced = false;
     if (document != null) {
       final int oldLength = containingFileByTree.getTextLength();
@@ -255,15 +259,9 @@ public class PomModelImpl extends UserDataHolderBase implements PomModel {
         BlockSupportImpl.sendAfterChildrenChangedEvent((PsiManagerImpl)PsiManager.getInstance(myProject), containingFileByTree, oldLength, true);
       }
     }
-    if (containingFileByTree != null) {
-      boolean isFromCommit = ApplicationManager.getApplication().isDispatchThread() &&
-                             ((PsiDocumentManagerBase)PsiDocumentManager.getInstance(myProject)).isCommitInProgress();
-      if (!isFromCommit && !synchronizer.isIgnorePsiEvents()) {
-        reparseParallelTrees(containingFileByTree, synchronizer);
-        if (docSynced) {
-          containingFileByTree.getViewProvider().contentsSynchronized();
-        }
-      }
+
+    if (isPhysicalPsiChange && docSynced) {
+      containingFileByTree.getViewProvider().contentsSynchronized();
     }
 
     if (progressIndicator != null) progressIndicator.finishNonCancelableSection();

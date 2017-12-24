@@ -537,10 +537,14 @@ public class FileUtil extends FileUtilRt {
   }
 
   public static void copy(@NotNull InputStream inputStream, int maxSize, @NotNull OutputStream outputStream) throws IOException {
+    copy(inputStream, (long)maxSize, outputStream);
+  }
+
+  public static void copy(@NotNull InputStream inputStream, long maxSize, @NotNull OutputStream outputStream) throws IOException {
     final byte[] buffer = getThreadLocalBuffer();
-    int toRead = maxSize;
+    long toRead = maxSize;
     while (toRead > 0) {
-      int read = inputStream.read(buffer, 0, Math.min(buffer.length, toRead));
+      int read = inputStream.read(buffer, 0, (int)Math.min(buffer.length, toRead));
       if (read < 0) break;
       toRead -= read;
       outputStream.write(buffer, 0, read);
@@ -1195,6 +1199,11 @@ public class FileUtil extends FileUtilRt {
 
   @NotNull
   public static String sanitizeFileName(@NotNull String name, boolean strict) {
+    return sanitizeFileName(name, strict, "_");
+  }
+  
+  @NotNull
+  public static String sanitizeFileName(@NotNull String name, boolean strict, String replacement) {
     StringBuilder result = null;
 
     int last = 0;
@@ -1220,7 +1229,7 @@ public class FileUtil extends FileUtilRt {
         result.append(name, last, i);
       }
       if (appendReplacement) {
-        result.append('_');
+        result.append(replacement);
       }
       last = i + 1;
     }
@@ -1289,15 +1298,15 @@ public class FileUtil extends FileUtilRt {
 
   @NotNull
   public static JBTreeTraverser<File> fileTraverser(@Nullable File root) {
-    return new JBTreeTraverser<File>(FILE_CHILDREN).withRoot(root);
+    return FILE_TRAVERSER.withRoot(root);
   }
 
-  private static final Function<File, Iterable<File>> FILE_CHILDREN = new Function<File, Iterable<File>>() {
+  private static final JBTreeTraverser<File> FILE_TRAVERSER = JBTreeTraverser.from(new Function<File, Iterable<File>>() {
     @Override
     public Iterable<File> fun(File file) {
       return file != null && file.isDirectory() ? JBIterable.of(file.listFiles()) : JBIterable.<File>empty();
     }
-  };
+  });
 
   public static boolean processFilesRecursively(@NotNull File root, @NotNull Processor<File> processor) {
     return fileTraverser(root).bfsTraversal().processEach(processor);

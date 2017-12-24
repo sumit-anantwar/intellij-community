@@ -167,9 +167,15 @@ public class VcsLogManager implements Disposable {
     return logProviders;
   }
 
+  /**
+   * Dispose VcsLogManager and execute some activity after it.
+   *
+   * @param callback activity to run after log is disposed. Is executed in background thread. null means execution of additional activity after dispose is not required.
+   */
+  @CalledInAwt
   public void dispose(@Nullable Runnable callback) {
     LOG.assertTrue(ApplicationManager.getApplication().isDispatchThread());
-    
+
     myTabsLogRefresher.closeLogTabs();
     Disposer.dispose(myTabsLogRefresher);
     ApplicationManager.getApplication().executeOnPooledThread(() -> {
@@ -182,13 +188,17 @@ public class VcsLogManager implements Disposable {
 
   @Override
   public void dispose() {
+    // since disposing log triggers flushing indexes on disk we do not want to do it in EDT
+    // disposing of VcsLogManager is done by manually executing dispose(@Nullable Runnable callback)
+    // the above method first disposes ui in EDT, than disposes everything else in background
+    LOG.assertTrue(!ApplicationManager.getApplication().isDispatchThread());
   }
 
   private class MyFatalErrorsHandler implements FatalErrorHandler {
     private final AtomicBoolean myIsBroken = new AtomicBoolean(false);
 
     @Override
-    public void consume(@Nullable Object source, @NotNull Exception e) {
+    public void consume(@Nullable Object source, @NotNull Throwable e) {
       if (myIsBroken.compareAndSet(false, true)) {
         processError(source, e);
       }
@@ -197,7 +207,7 @@ public class VcsLogManager implements Disposable {
       }
     }
 
-    protected void processError(@Nullable Object source, @NotNull Exception e) {
+    protected void processError(@Nullable Object source, @NotNull Throwable e) {
       if (myRecreateMainLogHandler != null) {
         ApplicationManager.getApplication().invokeLater(() -> myRecreateMainLogHandler.consume(e));
       }

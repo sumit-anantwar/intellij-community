@@ -57,6 +57,7 @@ import com.intellij.openapi.vfs.JarFileSystem;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.vfs.impl.VirtualFilePointerTracker;
 import com.intellij.openapi.vfs.impl.jar.JarFileSystemImpl;
 import com.intellij.openapi.vfs.impl.local.LocalFileSystemImpl;
 import com.intellij.openapi.vfs.newvfs.impl.VirtualDirectoryImpl;
@@ -123,6 +124,8 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
 
   private static boolean ourPlatformPrefixInitialized;
   private static Set<VirtualFile> ourEternallyLivingFilesCache;
+  private SdkLeakTracker myOldSdks;
+  private VirtualFilePointerTracker myVirtualFilePointerTracker;
 
   /**
    * If a temp directory is reused from some previous test run, there might be cached children in its VFS.
@@ -141,31 +144,32 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
     if (firstTime) {
       cleanPersistedVFSContent();
     }
+    // try to remember old sdks as soon as possible after the app instantiation
+    myOldSdks = new SdkLeakTracker();
   }
 
   private static final String[] PREFIX_CANDIDATES = {
-    "AppCode", "CLion", "CidrCommon", "Rider",
-    "Python", "PyCharmCore", "Ruby", "UltimateLangXml", "Idea", "PlatformLangXml" };
-
-  /**
-   * @deprecated calling this method is no longer necessary
-   */
-  public static void autodetectPlatformPrefix() {
-    doAutodetectPlatformPrefix();
-  }
+    "Rider",
+    null,
+    "AppCode", "CLion", "CidrCommon",
+    "DataGrip",
+    "Python", "PyCharmCore",
+    "Ruby",
+    "PhpStorm",
+    "UltimateLangXml", "Idea", "PlatformLangXml" };
 
   public static void doAutodetectPlatformPrefix() {
     if (ourPlatformPrefixInitialized) {
       return;
     }
-    URL resource = PlatformTestCase.class.getClassLoader().getResource("idea/ApplicationInfo.xml");
-    if (resource == null) {
-      for (String candidate : PREFIX_CANDIDATES) {
-        resource = PlatformTestCase.class.getClassLoader().getResource("META-INF/" + candidate + "Plugin.xml");
-        if (resource != null) {
+    for (String candidate : PREFIX_CANDIDATES) {
+      String markerPath = candidate != null ? "META-INF/" + candidate + "Plugin.xml" : "idea/ApplicationInfo.xml";
+      URL resource = PlatformTestCase.class.getClassLoader().getResource(markerPath);
+      if (resource != null) {
+        if (candidate != null) {
           setPlatformPrefix(candidate);
-          break;
         }
+        break;
       }
     }
   }
@@ -197,6 +201,9 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
     LOG.debug(getClass().getName() + ".setUp()");
 
     initApplication();
+    if (myOldSdks == null) { // some bastard's overridden initApplication completely
+      myOldSdks = new SdkLeakTracker();
+    }
 
     myEditorListenerTracker = new EditorListenerTracker();
     myThreadTracker = new ThreadTracker();
@@ -213,6 +220,7 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
 
     DocumentCommitThread.getInstance().clearQueue();
     UIUtil.dispatchAllInvocationEvents();
+    myVirtualFilePointerTracker = new VirtualFilePointerTracker();
   }
 
   public final Project getProject() {
@@ -506,6 +514,8 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
         }
       })
       .append(LightPlatformTestCase::checkEditorsReleased)
+      .append(() -> myOldSdks.checkForJdkTableLeaks())
+      .append(() -> myVirtualFilePointerTracker.assertPointersAreDisposed())
       .append(() -> {
         myProjectManager = null;
         myProject = null;
@@ -597,7 +607,7 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
     }
     finally {
       try {
-        SwingUtilities.invokeAndWait(() -> {
+        EdtTestUtil.runInEdtAndWait(() -> {
           cleanupApplicationCaches(getProject());
           resetAllFields();
         });
@@ -723,10 +733,12 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
     return myProject == null ? null : new TestDataProvider(myProject).getData(dataId);
   }
 
+  @NotNull
   public static File createTempDir(@NonNls final String prefix) throws IOException {
     return createTempDir(prefix, true);
   }
 
+  @NotNull
   public static File createTempDir(@NonNls final String prefix, final boolean refresh) throws IOException {
     final File tempDirectory = FileUtilRt.createTempDirectory("idea_test_" + prefix, null, false);
     myFilesToDelete.add(tempDirectory);
@@ -740,10 +752,12 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
     return LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file);
   }
 
+  @NotNull
   protected File createTempDirectory() throws IOException {
     return createTempDir("");
   }
 
+  @NotNull
   protected File createTempDirectory(final boolean refresh) throws IOException {
     return createTempDir("", refresh);
   }
@@ -771,6 +785,7 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
     }
   }
 
+  @NotNull
   public static VirtualFile createTempFile(@NonNls @NotNull String ext, @Nullable byte[] bom, @NonNls @NotNull String content, @NotNull Charset charset) throws IOException {
     File temp = FileUtil.createTempFile("copy", "." + ext);
     setContentOnDisk(temp, bom, content, charset);
@@ -786,40 +801,6 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
     return PsiDocumentManager.getInstance(getProject()).getPsiFile(document);
   }
 
-  /**
-   * @deprecated calling this method is no longer necessary
-   */
-  public static void initPlatformLangPrefix() {
-  }
-
-  /**
-   * This is the main point to set up your platform prefix. This allows you to use some sub-set of
-   * core plugin descriptors to make initialization faster (e.g. for running tests in classpath of the module where the test is located).
-   * It is calculated by some marker class presence in classpath.
-   * Note that it applies NEGATIVE logic for detection: prefix will be set if only marker class
-   * is NOT present in classpath.
-   * Also, only the very FIRST call to this method will take effect.
-   *
-   * @param classToTest marker class qualified name
-   * @param prefix platform prefix to be set up if marker class not found in classpath.
-   * @deprecated calling this method is no longer necessary
-   */
-  public static void initPlatformPrefix(String classToTest, String prefix) {
-    if (!ourPlatformPrefixInitialized) {
-      ourPlatformPrefixInitialized = true;
-      boolean isUltimate = true;
-      try {
-        PlatformTestCase.class.getClassLoader().loadClass(classToTest);
-      }
-      catch (ClassNotFoundException e) {
-        isUltimate = false;
-      }
-      if (!isUltimate) {
-        setPlatformPrefix(prefix);
-      }
-    }
-  }
-
   private static void setPlatformPrefix(String prefix) {
     System.setProperty(PlatformUtils.PLATFORM_PREFIX_KEY, prefix);
     ourPlatformPrefixInitialized = true;
@@ -830,6 +811,7 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
   public @interface WrapInCommand {
   }
 
+  @NotNull
   protected static VirtualFile createChildData(@NotNull final VirtualFile dir, @NotNull @NonNls final String name) {
     return new WriteAction<VirtualFile>() {
       @Override
@@ -839,6 +821,7 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
     }.execute().throwException().getResultObject();
   }
 
+  @NotNull
   protected static VirtualFile createChildDirectory(@NotNull final VirtualFile dir, @NotNull @NonNls final String name) {
     return new WriteAction<VirtualFile>() {
       @Override
@@ -869,7 +852,8 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
       }
     }.execute().throwException();
   }
-
+  
+  @NotNull
   protected static VirtualFile copy(@NotNull final VirtualFile file, @NotNull final VirtualFile newParent, @NotNull final String copyName) {
     final VirtualFile[] copy = new VirtualFile[1];
 

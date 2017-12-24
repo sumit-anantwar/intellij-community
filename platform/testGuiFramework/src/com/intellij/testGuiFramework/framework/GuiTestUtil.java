@@ -17,14 +17,14 @@ package com.intellij.testGuiFramework.framework;
 
 import com.intellij.diagnostic.AbstractMessage;
 import com.intellij.diagnostic.MessagePool;
-import com.intellij.ide.PrivacyPolicy;
 import com.intellij.ide.RecentProjectsManager;
+import com.intellij.ide.gdpr.EndUserAgreement;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.KeyboardShortcut;
 import com.intellij.openapi.application.ApplicationBundle;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ApplicationNamesInfo;
-import com.intellij.openapi.application.PathManager;
+import com.intellij.openapi.application.ex.PathManagerEx;
 import com.intellij.openapi.application.impl.ApplicationInfoImpl;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProgressManager;
@@ -97,7 +97,6 @@ import static org.fest.swing.timing.Timeout.timeout;
 import static org.fest.util.Strings.isNullOrEmpty;
 import static org.fest.util.Strings.quote;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.fail;
 
 public final class GuiTestUtil {
 
@@ -107,6 +106,8 @@ public final class GuiTestUtil {
   public static final Timeout MINUTE_TIMEOUT = timeout(1, MINUTES);
   public static final Timeout SHORT_TIMEOUT = timeout(2, MINUTES);
   public static final Timeout LONG_TIMEOUT = timeout(5, MINUTES);
+  public static final Timeout TEN_MIN_TIMEOUT = timeout(10, MINUTES);
+  public static final Timeout FIFTEEN_MIN_TIMEOUT = timeout(15, MINUTES);
 
   public static final String GUI_TESTS_RUNNING_IN_SUITE_PROPERTY = "gui.tests.running.in.suite";
 
@@ -275,8 +276,8 @@ public final class GuiTestUtil {
   private static void acceptAgreementIfNeeded(Robot robot) {
     final String policyAgreement = "Privacy Policy Agreement";
 
-    Pair<PrivacyPolicy.Version, String> policy = PrivacyPolicy.getContent();
-    boolean showPrivacyPolicyAgreement = !PrivacyPolicy.isVersionAccepted(policy.getFirst());
+    EndUserAgreement.Document doc = EndUserAgreement.getLatestDocument();
+    boolean showPrivacyPolicyAgreement = !doc.isAccepted();
     if (!showPrivacyPolicyAgreement) {
       LOG.info(policyAgreement + " dialog should be skipped on this system.");
       return;
@@ -392,7 +393,7 @@ public final class GuiTestUtil {
     String testDataDirEnvVar = getSystemPropertyOrEnvironmentVariable(TEST_DATA_DIR);
     if (testDataDirEnvVar != null) return new File(testDataDirEnvVar);
 
-    String testDataPath = PathManager.getHomePath() + "/community/platform/testGuiFramework/testData";
+    String testDataPath = PathManagerEx.getCommunityHomePath() + "/platform/testGuiFramework/testData";
     assertNotNull(testDataPath);
     assertThat(testDataPath).isNotEmpty();
     testDataPath = toCanonicalPath(toSystemDependentName(testDataPath));
@@ -484,45 +485,55 @@ public final class GuiTestUtil {
     // so limit it to one that is actually used as a popup, as identified by its model being a ListPopupModel:
     assertNotNull(root);
 
-    JBList list = waitUntilFound(robot, null,  new GenericTypeMatcher<JBList>(JBList.class) {
+    Ref<Pair<JListFixture, Integer>> fixtureAndClickableItemRef = new Ref<>();
+
+    waitUntilFound(robot, null,  new GenericTypeMatcher<JBList>(JBList.class) {
       @Override
       protected boolean isMatching(@NotNull JBList list) {
         ListModel model = list.getModel();
-        return model instanceof ListPopupModel;
+        if (model instanceof ListPopupModel) {
+          Pair<JListFixture, Integer> fixtureAndClickableItem = getJListFixtureAndClickableItem(labelMatcher, robot, list);
+          if (fixtureAndClickableItem != null) {
+            fixtureAndClickableItemRef.set(fixtureAndClickableItem);
+            return true;
+          }
+        }
+        return false;
       }
     }, timeout);
 
+    Pair<JListFixture, Integer> fixtureAndClickableItemPair = fixtureAndClickableItemRef.get();
+    JListFixture popupListFixture = fixtureAndClickableItemPair.first;
+    int clickableItem = fixtureAndClickableItemPair.second;
+    popupListFixture.clickItem(clickableItem);
+  }
 
-    // We can't use the normal JListFixture method to click by label since the ListModel items are
-    // ActionItems whose toString does not reflect the text, so search through the model items instead:
+  @Nullable
+  private static Pair<JListFixture, Integer> getJListFixtureAndClickableItem(@NotNull Matcher<String> labelMatcher, @NotNull Robot robot, JBList list) {
     ListPopupModel model = (ListPopupModel)list.getModel();
     List<String> items = new ArrayList<>();
     for (int i = 0; i < model.getSize(); i++) {
-      Object elementAt = model.getElementAt(i);
-      if (elementAt instanceof PopupFactoryImpl.ActionItem) {
-        PopupFactoryImpl.ActionItem
-          item = (PopupFactoryImpl.ActionItem)elementAt;
-        String s = item.getText();
-        if (labelMatcher.matches(s)) {
-          new JListFixture(robot, list).clickItem(i);
-          return;
-        }
-        items.add(s);
+      String popupItem = readPopupItem(model, i);
+      if (labelMatcher.matches(popupItem)) {
+        return new Pair<JListFixture, Integer>(new JListFixture(robot, list), i);
       }
-      else { // For example package private class IntentionActionWithTextCaching used in quickfix popups
-        String s = elementAt.toString();
-        if (labelMatcher.matches(s)) {
-          new JListFixture(robot, list).clickItem(i);
-          return;
-        }
-        items.add(s);
-      }
+    }
+    return null;
+  }
+
+  @NotNull
+  private static String readPopupItem(ListPopupModel model, int itemNumber) {
+    assert itemNumber < model.getSize();
+    Object elementAt = model.getElementAt(itemNumber);
+    if (elementAt instanceof PopupFactoryImpl.ActionItem) {
+      PopupFactoryImpl.ActionItem
+        item = (PopupFactoryImpl.ActionItem)elementAt;
+      return item.getText();
+    }
+    else { // For example package private class IntentionActionWithTextCaching used in quickfix popups
+      return elementAt.toString();
     }
 
-    if (items.isEmpty()) {
-      fail("Could not find any menu items in popup");
-    }
-    fail("Did not find menu item '" + labelMatcher + "' among " + StringUtil.join(items, ", "));
   }
 
   /**
@@ -709,20 +720,37 @@ public final class GuiTestUtil {
     return reference.get();
   }
 
+
   /**
    * Waits until no components match the given criteria under the given root
    */
   public static <T extends Component> void waitUntilGone(@NotNull final Robot robot,
-                                                         @NotNull final Container root,
+                                                         @Nullable final Container root,
                                                          @NotNull final GenericTypeMatcher<T> matcher) {
     Pause.pause(new Condition("Find component using " + matcher.toString()) {
       @Override
       public boolean test() {
-        Collection<T> allFound = robot.finder().findAll(root, matcher);
+        Collection<T> allFound = (root == null) ? robot.finder().findAll(matcher) : robot.finder().findAll(root, matcher);
         return allFound.isEmpty();
       }
     }, SHORT_TIMEOUT);
   }
+
+  /**
+   * Waits until no components match the given criteria under the given root
+   */
+  public static <T extends Component> void waitUntilGone(@NotNull final Robot robot,
+                                                         @Nullable final Container root, int timeoutInSeconds,
+                                                         @NotNull final GenericTypeMatcher<T> matcher) {
+    Pause.pause(new Condition("Find component using " + matcher.toString()) {
+      @Override
+      public boolean test() {
+        Collection<T> allFound = (root == null) ? robot.finder().findAll(matcher) : robot.finder().findAll(root, matcher);
+        return allFound.isEmpty();
+      }
+    }, timeout(timeoutInSeconds, SECONDS));
+  }
+
 
   @Nullable
   public static String getSystemPropertyOrEnvironmentVariable(@NotNull String name) {

@@ -24,6 +24,7 @@ import com.intellij.codeInsight.intention.BaseElementAtCaretIntentionAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.*;
@@ -76,7 +77,8 @@ public class AddSingleMemberStaticImportAction extends BaseElementAtCaretIntenti
         JavaResolveResult[] results = refExpr.multiResolve(false);
         for (JavaResolveResult result : results) {
           final PsiElement resolved = result.getElement();
-          if (resolved instanceof PsiMember && ((PsiModifierListOwner)resolved).hasModifierProperty(PsiModifier.STATIC)) {
+          if (resolved instanceof PsiMember && ((PsiModifierListOwner)resolved).hasModifierProperty(PsiModifier.STATIC) ||
+              resolved instanceof PsiClass) {
             PsiClass aClass = getResolvedClass(element, (PsiMember)resolved);
             String qName = aClass != null ? aClass.getQualifiedName() : null;
             if (aClass != null &&
@@ -109,10 +111,10 @@ public class AddSingleMemberStaticImportAction extends BaseElementAtCaretIntenti
                 }
               }
               else {
-                final PsiJavaCodeReferenceElement copy = (PsiJavaCodeReferenceElement)refExpr.copy();
-                final PsiElement qualifier = copy.getQualifier();
-                if (qualifier == null) return null;
-                qualifier.delete();
+                PsiElement refNameElement = refExpr.getReferenceNameElement();
+                if (refNameElement == null) return null;
+                final PsiJavaCodeReferenceElement copy = JavaPsiFacade.getElementFactory(refNameElement.getProject())
+                  .createReferenceFromText(refNameElement.getText(), refExpr);
                 final PsiElement target = copy.resolve();
                 if (target != null && PsiTreeUtil.getParentOfType(target, PsiClass.class) != aClass) return null;
               }
@@ -256,7 +258,9 @@ public class AddSingleMemberStaticImportAction extends BaseElementAtCaretIntenti
                 }
               }
             }
-            else if (referent == null || referent instanceof PsiMember && ((PsiMember)referent).hasModifierProperty(PsiModifier.STATIC)) {
+            else if (referent == null ||
+                     referent instanceof PsiClass ||
+                     referent instanceof PsiMember && ((PsiMember)referent).hasModifierProperty(PsiModifier.STATIC)) {
               if (qualifierExpression instanceof PsiJavaCodeReferenceElement) {
                 PsiElement aClass = ((PsiJavaCodeReferenceElement)qualifierExpression).resolve();
                 if (aClass instanceof PsiVariable) {
@@ -269,7 +273,7 @@ public class AddSingleMemberStaticImportAction extends BaseElementAtCaretIntenti
                   catch (IncorrectOperationException e) {
                     LOG.error(e);
                   }
-                  if (reference.resolve() != referent) {
+                  if (!Comparing.equal(reference.resolve(), referent)) {
                     reference = rebind(reference, resolvedClass);
                   }
                 }

@@ -1,17 +1,5 @@
 /*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
  */
 package org.jetbrains.idea.maven;
 
@@ -30,11 +18,12 @@ import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.rt.execution.junit.FileComparisonFailure;
+import com.intellij.testFramework.EdtTestUtil;
 import com.intellij.testFramework.PsiTestUtil;
 import com.intellij.testFramework.UsefulTestCase;
 import com.intellij.testFramework.fixtures.IdeaProjectTestFixture;
 import com.intellij.testFramework.fixtures.IdeaTestFixtureFactory;
-import com.intellij.util.ui.UIUtil;
 import gnu.trove.THashSet;
 import org.intellij.lang.annotations.Language;
 import org.jetbrains.annotations.NonNls;
@@ -90,13 +79,8 @@ public abstract class MavenTestCase extends UsefulTestCase {
       getMavenGeneralSettings().setMavenHome(home);
     }
 
-    UIUtil.invokeAndWaitIfNeeded((Runnable)() -> {
-      try {
-        restoreSettingsFile();
-      }
-      catch (IOException e) {
-        throw new RuntimeException(e);
-      }
+    EdtTestUtil.runInEdtAndWait(() -> {
+      restoreSettingsFile();
 
       ApplicationManager.getApplication().runWriteAction(() -> {
         try {
@@ -122,14 +106,7 @@ public abstract class MavenTestCase extends UsefulTestCase {
       MavenServerManager.getInstance().shutdown(true);
       MavenArtifactDownloader.awaitQuiescence(100, TimeUnit.SECONDS);
       myProject = null;
-      UIUtil.invokeAndWaitIfNeeded((Runnable)() -> {
-        try {
-          tearDownFixtures();
-        }
-        catch (Exception e) {
-          throw new RuntimeException(e);
-        }
-      });
+      EdtTestUtil.runInEdtAndWait(() -> tearDownFixtures());
 
       MavenIndicesManager.getInstance().clear();
     }
@@ -352,7 +329,7 @@ public abstract class MavenTestCase extends UsefulTestCase {
     }.execute().getResultObject();
   }
 
-  protected VirtualFile createProjectPom(@NonNls String xml) {
+  protected VirtualFile createProjectPom(@NotNull @Language("xml") String xml) {
     return myProjectPom = createPomFile(myProjectRoot, xml);
   }
 
@@ -387,19 +364,19 @@ public abstract class MavenTestCase extends UsefulTestCase {
            "</project>";
   }
 
-  protected VirtualFile createProfilesXmlOldStyle(String xml) throws IOException {
+  protected VirtualFile createProfilesXmlOldStyle(String xml) {
     return createProfilesFile(myProjectRoot, xml, true);
   }
 
-  protected VirtualFile createProfilesXmlOldStyle(String relativePath, String xml) throws IOException {
+  protected VirtualFile createProfilesXmlOldStyle(String relativePath, String xml) {
     return createProfilesFile(createProjectSubDir(relativePath), xml, true);
   }
 
-  protected VirtualFile createProfilesXml(String xml) throws IOException {
+  protected VirtualFile createProfilesXml(String xml) {
     return createProfilesFile(myProjectRoot, xml, false);
   }
 
-  protected VirtualFile createProfilesXml(String relativePath, String xml) throws IOException {
+  protected VirtualFile createProfilesXml(String relativePath, String xml) {
     return createProfilesFile(createProjectSubDir(relativePath), xml, false);
   }
 
@@ -543,6 +520,17 @@ public abstract class MavenTestCase extends UsefulTestCase {
     List<T> actualCopy = new ArrayList<>(actual);
     actualCopy.removeAll(Arrays.asList(expected));
     assertEquals(actual.toString(), actualCopy.size(), actual.size());
+  }
+
+  protected static void assertUnorderedLinesWithFile(String filePath, String expectedText) {
+    try {
+      assertSameLinesWithFile(filePath, expectedText);
+    }
+    catch (FileComparisonFailure e) {
+      String expected = e.getExpected();
+      String actual = e.getActual();
+      assertUnorderedElementsAreEqual(expected.split("\n"), actual.split("\n"));
+    }
   }
 
   protected boolean ignore() {

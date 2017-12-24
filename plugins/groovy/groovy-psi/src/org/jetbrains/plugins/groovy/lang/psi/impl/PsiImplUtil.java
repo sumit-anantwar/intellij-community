@@ -62,6 +62,7 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.arguments.GrNamedArg
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrClosableBlock;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrCodeBlock;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrOpenBlock;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.clauses.GrForInClause;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.*;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.literals.GrLiteral;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.literals.GrString;
@@ -184,6 +185,10 @@ public class PsiImplUtil {
       if (newExpr != addedParenth) {
         return oldExpr.replaceWithExpression(addedParenth, removeUnnecessaryParentheses);
       }
+    }
+
+    if (oldParent instanceof GrForInClause) {
+      return (GrExpression) oldExpr.replace(parenthesize(newExpr));
     }
 
     //if replace closure argument with expression
@@ -398,11 +403,13 @@ public class PsiImplUtil {
 
     for (GrParameter p : parameters) {
       final GrTypeElement declaredType = p.getTypeElementGroovy();
-      if ((declaredType == null || declaredType.getType().equalsToText(CommonClassNames.JAVA_LANG_STRING + "[]")) &&
-          p.getInitializerGroovy() == null) {
+      boolean optional = p.isOptional();
+      if (optional) {
+        optional_count++;
+      }
+      else if (declaredType == null || declaredType.getType().equalsToText(CommonClassNames.JAVA_LANG_STRING + "[]")) {
         args_count++;
       }
-      if (p.getInitializerGroovy() != null) optional_count++;
     }
 
     return optional_count == parameters.length - 1 && args_count == 1;
@@ -705,6 +712,12 @@ public class PsiImplUtil {
       if (child instanceof GrClosableBlock) return true;
     }
     return false;
+  }
+
+  public static boolean hasArguments(@NotNull GrCall call) {
+    if (hasClosureArguments(call)) return true;
+    GrArgumentList list = call.getArgumentList();
+    return hasExpressionArguments(list) || hasNamedArguments(list);
   }
 
   public static PsiElement findTailingSemicolon(@NotNull GrStatement statement) {

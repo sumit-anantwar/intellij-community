@@ -132,9 +132,13 @@ public class PyStackFrame extends XStackFrame {
     if (node.isObsolete()) return;
     ApplicationManager.getApplication().executeOnPooledThread(() -> {
       try {
+        boolean cached = myDebugProcess.isCurrentFrameCached();
         XValueChildrenList values = myDebugProcess.loadFrame();
         if (!node.isObsolete()) {
           addChildren(node, values);
+        }
+        if (values != null && !cached) {
+          PyDebugValue.getAsyncValues(myDebugProcess, values);
         }
       }
       catch (PyDebuggerException e) {

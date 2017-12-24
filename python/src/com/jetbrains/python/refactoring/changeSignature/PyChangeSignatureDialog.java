@@ -149,7 +149,7 @@ public class PyChangeSignatureDialog extends
       if (name.equals("*")) {
         hadSingleStar = true;
         if (index == parametersLength - 1) {
-          return PyBundle.message("ANN.named.arguments.after.star");
+          return PyBundle.message("ANN.named.parameters.after.star");
         }
       }
       else if (name.startsWith("*") && !name.startsWith("**")) {
@@ -166,7 +166,7 @@ public class PyChangeSignatureDialog extends
       }
       else if (name.startsWith("**")) {
         if (hadSingleStar && !hadParamsAfterSingleStar) {
-          return PyBundle.message("ANN.named.arguments.after.star");
+          return PyBundle.message("ANN.named.parameters.after.star");
         }
         if (hadKeywordContainer) {
           return PyBundle.message("refactoring.change.signature.dialog.validation.multiple.double.star");
@@ -183,7 +183,7 @@ public class PyChangeSignatureDialog extends
         if (hadSingleStar) {
           hadParamsAfterSingleStar = true;
         }
-        if (hadPositionalContainer && !languageLevel.isPy3K()) {
+        if (hadPositionalContainer && languageLevel.isPython2()) {
           return PyBundle.message("ANN.regular.param.after.vararg");
         }
         else if (hadKeywordContainer) {
@@ -194,7 +194,7 @@ public class PyChangeSignatureDialog extends
           hadDefaultValue = true;
         }
         else {
-          if (hadDefaultValue && !hadSingleStar && (!languageLevel.isPy3K() || !hadPositionalContainer)) {
+          if (hadDefaultValue && !hadSingleStar && (languageLevel.isPython2() || !hadPositionalContainer)) {
             return PyBundle.message("ANN.non.default.param.after.default");
           }
         }

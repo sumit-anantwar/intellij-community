@@ -13,6 +13,7 @@ import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.xdebugger.XSourcePosition;
 import com.intellij.xdebugger.breakpoints.SuspendPolicy;
 import com.intellij.xdebugger.frame.XValueChildrenList;
 import com.jetbrains.python.console.pydev.PydevCompletionVariant;
@@ -204,6 +205,13 @@ public class RemoteDebugger implements ProcessDebugger {
     return command.getNewValue();
   }
 
+  public void loadFullVariableValues(@NotNull String threadId,
+                                     @NotNull String frameId,
+                                     @NotNull List<PyFrameAccessor.PyAsyncValue<String>> vars) throws PyDebuggerException {
+    final LoadFullValueCommand command = new LoadFullValueCommand(this, threadId, frameId, vars);
+    command.execute();
+  }
+
   @Override
   @Nullable
   public String loadSource(String path) {
@@ -333,10 +341,12 @@ public class RemoteDebugger implements ProcessDebugger {
 
       try {
         command.execute();
-        myLatch.countDown();
       }
-      catch (PyDebuggerException e) {
+      catch (Exception e) {
         LOG.error(e);
+      }
+      finally {
+        myLatch.countDown();
       }
     });
     if (command.isResponseExpected()) {
@@ -399,10 +409,33 @@ public class RemoteDebugger implements ProcessDebugger {
   }
 
   @Override
+  public void setNextStatement(@NotNull String threadId,
+                               @NotNull XSourcePosition sourcePosition,
+                               @Nullable String functionName,
+                               @NotNull PyDebugCallback<Pair<Boolean, String>> callback) {
+    final SetNextStatementCommand command = new SetNextStatementCommand(this, threadId, sourcePosition, functionName, callback);
+    try {
+      command.execute();
+    }
+    catch (PyDebuggerException e) {
+      if (isConnected()) {
+        LOG.error(e);
+      }
+    }
+  }
+
+  @Override
   public void setTempBreakpoint(@NotNull String type, @NotNull String file, int line) {
     final SetBreakpointCommand command =
       new SetBreakpointCommand(this, type, file, line);
-    execute(command);  // set temp. breakpoint
+    try {
+      command.execute();
+    }
+    catch (PyDebuggerException e) {
+      if (isConnected()) {
+        LOG.error(e);
+      }
+    }
     myTempBreakpoints.put(Pair.create(file, line), type);
   }
 
@@ -414,7 +447,7 @@ public class RemoteDebugger implements ProcessDebugger {
       execute(command);  // remove temp. breakpoint
     }
     else {
-      LOG.error("Temp breakpoint not found for " + file + ":" + line);
+      LOG.warn("Temp breakpoint not found for " + file + ":" + line);
     }
   }
 

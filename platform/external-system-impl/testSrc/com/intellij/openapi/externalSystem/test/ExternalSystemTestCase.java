@@ -15,9 +15,9 @@
  */
 package com.intellij.openapi.externalSystem.test;
 
-import com.intellij.compiler.CompilerTestUtil;
 import com.intellij.compiler.artifacts.ArtifactsTestUtil;
 import com.intellij.compiler.impl.ModuleCompileScope;
+import com.intellij.compiler.server.BuildManager;
 import com.intellij.openapi.application.AccessToken;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.Result;
@@ -35,7 +35,7 @@ import com.intellij.openapi.projectRoots.impl.JavaAwareProjectJdkTableImpl;
 import com.intellij.openapi.roots.ModuleRootModificationUtil;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.SystemInfo;
-import com.intellij.openapi.util.io.ByteSequence;
+import com.intellij.openapi.util.io.ByteArraySequence;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.openapi.vfs.CharsetToolkit;
@@ -50,6 +50,7 @@ import com.intellij.testFramework.fixtures.IdeaProjectTestFixture;
 import com.intellij.testFramework.fixtures.IdeaTestFixtureFactory;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.io.PathKt;
 import com.intellij.util.io.TestFileSystemItem;
 import gnu.trove.THashSet;
 import org.jetbrains.annotations.NonNls;
@@ -63,6 +64,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.List;
 import java.util.jar.Attributes;
@@ -116,8 +118,6 @@ public abstract class ExternalSystemTestCase extends UsefulTestCase {
     if (!allowedRoots.isEmpty()) {
       VfsRootAccess.allowRootAccess(myTestFixture.getTestRootDisposable(), ArrayUtil.toStringArray(allowedRoots));
     }
-
-    CompilerTestUtil.enableExternalCompiler();
   }
 
   protected void collectAllowedRoots(List<String> roots) {
@@ -167,7 +167,6 @@ public abstract class ExternalSystemTestCase extends UsefulTestCase {
   public void tearDown() throws Exception {
     try {
       EdtTestUtil.runInEdtAndWait(() -> {
-        CompilerTestUtil.disableExternalCompiler(myProject);
         tearDownFixtures();
       });
       myProject = null;
@@ -358,7 +357,7 @@ public abstract class ExternalSystemTestCase extends UsefulTestCase {
   }
 
   @NotNull
-  protected VirtualFile createProjectJarSubFile(String relativePath, Pair<ByteSequence, String>... contentEntries) throws IOException {
+  protected VirtualFile createProjectJarSubFile(String relativePath, Pair<ByteArraySequence, String>... contentEntries) throws IOException {
     assertTrue("Use 'jar' extension for JAR files: '" + relativePath + "'", FileUtilRt.extensionEquals(relativePath, "jar"));
     File f = new File(getProjectPath(), relativePath);
     FileUtil.ensureExists(f.getParentFile());
@@ -371,7 +370,7 @@ public abstract class ExternalSystemTestCase extends UsefulTestCase {
     Manifest manifest = new Manifest();
     manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
     JarOutputStream target = new JarOutputStream(new FileOutputStream(f), manifest);
-    for (Pair<ByteSequence, String> contentEntry : contentEntries) {
+    for (Pair<ByteArraySequence, String> contentEntry : contentEntries) {
       addJarEntry(contentEntry.first.getBytes(), contentEntry.second, target);
     }
     target.close();
@@ -452,13 +451,13 @@ public abstract class ExternalSystemTestCase extends UsefulTestCase {
   }
 
   protected Sdk setupJdkForModule(final String moduleName) {
-    final Sdk sdk = true ? JavaAwareProjectJdkTableImpl.getInstanceEx().getInternalJdk() : createJdk("Java 1.5");
+    final Sdk sdk = true ? JavaAwareProjectJdkTableImpl.getInstanceEx().getInternalJdk() : createJdk();
     ModuleRootModificationUtil.setModuleSdk(getModule(moduleName), sdk);
     return sdk;
   }
 
-  protected static Sdk createJdk(String versionName) {
-    return IdeaTestUtil.getMockJdk17(versionName);
+  protected static Sdk createJdk() {
+    return IdeaTestUtil.getMockJdk17();
   }
 
   protected Module getModule(final String name) {
@@ -562,6 +561,22 @@ public abstract class ExternalSystemTestCase extends UsefulTestCase {
   protected boolean ignore() {
     printIgnoredMessage(null);
     return true;
+  }
+
+  public static void deleteBuildSystemDirectory() {
+    Path buildSystemDirectory = BuildManager.getInstance().getBuildSystemDirectory();
+    try {
+      PathKt.delete(buildSystemDirectory);
+      return;
+    }
+    catch (Exception ignore) {
+    }
+    try {
+      FileUtil.delete(buildSystemDirectory.toFile());
+    }
+    catch (Exception e) {
+      LOG.warn("Unable to remove build system directory.", e);
+    }
   }
 
   private void printIgnoredMessage(String message) {

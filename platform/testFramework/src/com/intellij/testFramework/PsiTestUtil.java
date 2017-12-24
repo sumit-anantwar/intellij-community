@@ -15,6 +15,7 @@
  */
 package com.intellij.testFramework;
 
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.Result;
 import com.intellij.openapi.application.RunResult;
@@ -34,6 +35,7 @@ import com.intellij.openapi.roots.impl.libraries.ProjectLibraryTable;
 import com.intellij.openapi.roots.libraries.Library;
 import com.intellij.openapi.roots.libraries.LibraryTable;
 import com.intellij.openapi.util.Comparing;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
@@ -194,7 +196,7 @@ public class PsiTestUtil {
     ModuleRootModificationUtil.updateModel(module, model -> model.removeContentEntry(findContentEntryWithAssertion(model, contentRoot)));
   }
 
-  public static void removeSourceRoot(Module module, VirtualFile root) {
+  public static void removeSourceRoot(@NotNull Module module, @NotNull VirtualFile root) {
     ModuleRootModificationUtil.updateModel(module, model -> {
       ContentEntry entry = findContentEntryWithAssertion(model, root);
       for (SourceFolder sourceFolder : entry.getSourceFolders()) {
@@ -234,8 +236,8 @@ public class PsiTestUtil {
     return Objects.requireNonNull(file.getManager().findFile(copy));
   }
 
-  public static void checkPsiMatchesTextIgnoringWhitespace(PsiFile file) {
-    compareFromAllRoots(file, f -> DebugUtil.psiTreeToString(f, true));
+  public static void checkPsiMatchesTextIgnoringNonCode(PsiFile file) {
+    compareFromAllRoots(file, f -> DebugUtil.psiToStringIgnoringNonCode(f));
   }
 
   public static void addLibrary(Module module, String libPath) {
@@ -247,10 +249,34 @@ public class PsiTestUtil {
   public static void addLibrary(Module module, String libName, String libPath, String... jarArr) {
     ModuleRootModificationUtil.updateModel(module, model -> addLibrary(module, model, libName, libPath, jarArr));
   }
+  public static void addLibrary(@NotNull Disposable parent, Module module, String libName, String libPath, String... jarArr) {
+    Ref<Library> ref = new Ref<>();
+    ModuleRootModificationUtil.updateModel(module, model -> ref.set(addLibrary(module, model, libName, libPath, jarArr)));
+    Disposer.register(parent, () -> {
+      Library library = ref.get();
+      ModuleRootModificationUtil.updateModel(module, model -> model.removeOrderEntry(model.findLibraryOrderEntry(library)));
+      WriteCommandAction.runWriteCommandAction(null, ()-> {
+        LibraryTable table = ProjectLibraryTable.getInstance(module.getProject());
+        LibraryTable.ModifiableModel model = table.getModifiableModel();
+        model.removeLibrary(library);
+        model.commit();
+      });
+    });
+  }
 
   public static void addProjectLibrary(Module module, String libName, List<String> classesRootPaths) {
-    List<VirtualFile> roots = ContainerUtil.map(classesRootPaths, path -> VirtualFileManager.getInstance().refreshAndFindFileByUrl(VfsUtil.getUrlForLibraryRoot(new File(path))));
+    List<VirtualFile> roots = getLibraryRoots(classesRootPaths);
     addProjectLibrary(module, libName, roots, Collections.emptyList());
+  }
+
+  @NotNull
+  private static List<VirtualFile> getLibraryRoots(List<String> classesRootPaths) {
+    return ContainerUtil.map(classesRootPaths, path -> VirtualFileManager.getInstance().refreshAndFindFileByUrl(VfsUtil.getUrlForLibraryRoot(new File(path))));
+  }
+
+  public static void addProjectLibrary(ModifiableRootModel model, String libName, List<String> classesRootPaths) {
+    List<VirtualFile> roots = getLibraryRoots(classesRootPaths);
+    addProjectLibrary(model, libName, roots, Collections.emptyList());
   }
 
   public static void addProjectLibrary(Module module, String libName, VirtualFile... classesRoots) {
@@ -259,16 +285,16 @@ public class PsiTestUtil {
 
   public static Library addProjectLibrary(Module module, String libName, List<VirtualFile> classesRoots, List<VirtualFile> sourceRoots) {
     Ref<Library> result = Ref.create();
-    ModuleRootModificationUtil.updateModel(module, model -> result.set(addProjectLibrary(module, model, libName, classesRoots, sourceRoots)));
+    ModuleRootModificationUtil.updateModel(module, model -> result.set(addProjectLibrary(model, libName, classesRoots, sourceRoots)));
     return result.get();
   }
 
-  private static Library addProjectLibrary(Module module,
-                                           ModifiableRootModel model,
+  @NotNull
+  private static Library addProjectLibrary(ModifiableRootModel model,
                                            String libName,
                                            List<VirtualFile> classesRoots,
                                            List<VirtualFile> sourceRoots) {
-    LibraryTable libraryTable = ProjectLibraryTable.getInstance(module.getProject());
+    LibraryTable libraryTable = ProjectLibraryTable.getInstance(model.getProject());
     RunResult<Library> result = new WriteAction<Library>() {
       @Override
       protected void run(@NotNull Result<Library> result) {
@@ -302,11 +328,12 @@ public class PsiTestUtil {
     return result.getResultObject();
   }
 
-  public static void addLibrary(Module module,
-                                ModifiableRootModel model,
-                                String libName,
-                                String libPath,
-                                String... jarArr) {
+  @NotNull
+  public static Library addLibrary(Module module,
+                                   ModifiableRootModel model,
+                                   String libName,
+                                   String libPath,
+                                   String... jarArr) {
     List<VirtualFile> classesRoots = new ArrayList<>();
     for (String jar : jarArr) {
       if (!libPath.endsWith("/") && !jar.startsWith("/")) {
@@ -323,7 +350,7 @@ public class PsiTestUtil {
       assert root != null : "Library root folder not found: " + path + "!/";
       classesRoots.add(root);
     }
-    addProjectLibrary(module, model, libName, classesRoots, Collections.emptyList());
+    return addProjectLibrary(model, libName, classesRoots, Collections.emptyList());
   }
 
   public static void addLibrary(Module module,
@@ -430,9 +457,13 @@ public class PsiTestUtil {
       StubTextInconsistencyException.checkStubTextConsistency(file);
     }
     catch (StubTextInconsistencyException e) {
-      Assert.assertEquals("Re-created from text:\n" + e.getStubsFromText(), "Stubs from PSI structure:\n" + e.getStubsFromPsi());
-      throw e;
+      compareStubTexts(e);
     }
+  }
+
+  public static void compareStubTexts(@NotNull StubTextInconsistencyException e) {
+    Assert.assertEquals("Re-created from text:\n" + e.getStubsFromText(), "Stubs from PSI structure:\n" + e.getStubsFromPsi());
+    throw e;
   }
 
   public static void checkPsiStructureWithCommit(@NotNull PsiFile psiFile, Consumer<PsiFile> checker) {

@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInsight.template.postfix.templates;
 
 import com.google.common.collect.Sets;
@@ -161,14 +147,16 @@ public class PostfixLiveTemplate extends CustomLiveTemplateBase {
   }
 
   @Override
-  public boolean isApplicable(PsiFile file, int offset, boolean wrapping) {
+  public boolean isApplicable(@NotNull CustomTemplateCallback callback, int offset, boolean wrapping) {
     PostfixTemplatesSettings settings = PostfixTemplatesSettings.getInstance();
-    if (wrapping || file == null || settings == null || !settings.isPostfixTemplatesEnabled()) {
+    if (wrapping || settings == null || !settings.isPostfixTemplatesEnabled()) {
       return false;
     }
-    Language language = PsiUtilCore.getLanguageAtOffset(file, offset);
+    PsiFile contextFile = callback.getFile();
+    Language language = PsiUtilCore.getLanguageAtOffset(contextFile, offset);
+    String fileText = contextFile.getText();
     for (PostfixTemplateProvider provider : LanguagePostfixTemplate.LANG_EP.allForLanguage(language)) {
-      if (StringUtil.isNotEmpty(computeTemplateKeyWithoutContextChecking(provider, file.getText(), offset + 1))) {
+      if (StringUtil.isNotEmpty(computeTemplateKeyWithoutContextChecking(provider, fileText, offset + 1))) {
         return true;
       }
     }
@@ -198,7 +186,7 @@ public class PostfixLiveTemplate extends CustomLiveTemplateBase {
   }
 
   @Override
-  public boolean hasCompletionItem(@NotNull PsiFile file, int offset) {
+  public boolean hasCompletionItem(@NotNull CustomTemplateCallback callback, int offset) {
     return true;
   }
 
@@ -257,6 +245,10 @@ public class PostfixLiveTemplate extends CustomLiveTemplateBase {
                                                                                 @NotNull String key,
                                                                                 @NotNull PsiFile file,
                                                                                 @NotNull Editor editor) {
+    if (file.getFileType().isBinary()) {
+      return Conditions.alwaysFalse();
+    }
+
     int currentOffset = editor.getCaretModel().getOffset();
     final int newOffset = currentOffset - key.length();
     CharSequence fileContent = editor.getDocument().getCharsSequence();

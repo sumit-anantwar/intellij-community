@@ -131,21 +131,16 @@ public class CustomizeUIThemeStepPanel extends AbstractCustomizeWizardStep {
 
   protected void initThemes(Collection<ThemeInfo> result) {
     if (SystemInfo.isMac) {
-      result.add(getDefaultLafOnMac());
       result.add(DARCULA);
+      result.add(getDefaultLafOnMac());
     }
     else if (SystemInfo.isWindows) {
-      //if (PlatformUtils.isIdeaCommunity()) {
-      result.add(INTELLIJ);
-      //}
-      //else {
-      //  addLaf(ALLOY);
-      //}
       result.add(DARCULA);
+      result.add(INTELLIJ);
     }
     else {
-      result.add(INTELLIJ);
       result.add(DARCULA);
+      result.add(INTELLIJ);
       result.add(GTK);
     }
   }
@@ -206,6 +201,7 @@ public class CustomizeUIThemeStepPanel extends AbstractCustomizeWizardStep {
     try {
       boolean wasUnderDarcula = UIUtil.isUnderDarcula();
       UIManager.setLookAndFeel(info.getClassName());
+      LafManagerImpl.updateForDarcula(UIUtil.isUnderDarcula());
       String className = info.getClassName();
       if (!myInitial) {
         WelcomeWizardUtil.setWizardLAF(className);
@@ -228,7 +224,7 @@ public class CustomizeUIThemeStepPanel extends AbstractCustomizeWizardStep {
       }
       if (myColumnMode) {
         myPreviewLabel.setIcon(theme.getIcon());
-        myPreviewLabel.setBorder(BorderFactory.createLineBorder(UIManager.getColor("Label.disabledForeground")));
+        myPreviewLabel.setBorder(BorderFactory.createLineBorder(UIManager.getColor("Label.foreground")));
       }
     }
     catch (Exception e) {

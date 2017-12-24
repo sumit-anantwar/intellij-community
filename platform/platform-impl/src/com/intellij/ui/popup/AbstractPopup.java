@@ -1,26 +1,9 @@
-/*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ui.popup;
 
 import com.intellij.codeInsight.hint.HintUtil;
 import com.intellij.icons.AllIcons;
-import com.intellij.ide.DataManager;
-import com.intellij.ide.IdeEventQueue;
-import com.intellij.ide.UiActivity;
-import com.intellij.ide.UiActivityMonitor;
+import com.intellij.ide.*;
 import com.intellij.ide.actions.WindowAction;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
@@ -164,7 +147,6 @@ public class AbstractPopup implements JBPopup {
   protected SearchTextField mySpeedSearchPatternField;
   private boolean myNativePopup;
   private boolean myMayBeParent;
-  private AbstractPopup.SpeedSearchKeyListener mySearchKeyListener;
   private JLabel myAdComponent;
   private boolean myDisposed;
 
@@ -228,6 +210,7 @@ public class AbstractPopup implements JBPopup {
                      boolean mayBeParent,
                      boolean showShadow,
                      boolean showBorder,
+                     Color borderColor,
                      boolean cancelOnWindowDeactivation,
                      @Nullable BooleanFunction<KeyEvent> keyEventHandler)
   {
@@ -238,7 +221,9 @@ public class AbstractPopup implements JBPopup {
     myActivityKey = new UiActivity.Focus("Popup:" + this);
     myProject = project;
     myComponent = component;
-    myPopupBorder = showBorder ? PopupBorder.Factory.create(true, showShadow) : PopupBorder.Factory.createEmpty();
+    myPopupBorder = showBorder ? borderColor != null ? PopupBorder.Factory.createColored(borderColor) :
+                                 PopupBorder.Factory.create(true, showShadow) :
+                                 PopupBorder.Factory.createEmpty();
     myShadowed = showShadow;
     myContent = createContentPanel(resizable, myPopupBorder, isToDrawMacCorner() && resizable);
     myMayBeParent = mayBeParent;
@@ -384,12 +369,6 @@ public class AbstractPopup implements JBPopup {
     myDimensionServiceKey = dimensionServiceKey;
   }
 
-  @Override
-  public void showInCenterOf(@NotNull Component aContainer) {
-    final Point popupPoint = getCenterOf(aContainer, getPreferredContentSize());
-    show(aContainer, popupPoint.x, popupPoint.y, false);
-  }
-
   public void setAdText(@NotNull final String s) {
     setAdText(s, SwingConstants.LEFT);
   }
@@ -407,7 +386,7 @@ public class AbstractPopup implements JBPopup {
         @Override
         protected void paintComponent(Graphics g) {
           g.setColor(Gray._135);
-          g.drawLine(0, 0, getWidth(), 0);
+          UIUtil.drawLine(g, 0, 0, getWidth(), 0);
           super.paintComponent(g);
         }
       };
@@ -460,15 +439,24 @@ public class AbstractPopup implements JBPopup {
   }
 
   @Override
+  public void showInCenterOf(@NotNull Component aComponent) {
+    HelpTooltip.setMasterPopup(aComponent, this);
+    Point popupPoint = getCenterOf(aComponent, getPreferredContentSize());
+    show(aComponent, popupPoint.x, popupPoint.y, false);
+  }
+
+
+  @Override
   public void showUnderneathOf(@NotNull Component aComponent) {
     show(new RelativePoint(aComponent, UIUtil.isUnderWin10LookAndFeel() ?
-              new Point(2, aComponent.getHeight()) :
+              new Point(JBUI.scale(2), aComponent.getHeight()) :
               new Point(0, aComponent.getHeight())));
   }
 
   @Override
   public void show(@NotNull RelativePoint aPoint) {
-    final Point screenPoint = aPoint.getScreenPoint();
+    HelpTooltip.setMasterPopup(aPoint.getOriginalComponent(), this);
+    Point screenPoint = aPoint.getScreenPoint();
     show(aPoint.getComponent(), screenPoint.x, screenPoint.y, false);
   }
 
@@ -536,7 +524,7 @@ public class AbstractPopup implements JBPopup {
     // Set the accessible parent so that screen readers don't announce
     // a window context change -- the tooltip is "logically" hosted
     // inside the component (e.g. editor) it appears on top of.
-    AccessibleContextUtil.setParent(myComponent, editor.getContentComponent());
+    AccessibleContextUtil.setParent((Component)myComponent, editor.getContentComponent());
     DataContext context = ((EditorEx)editor).getDataContext();
     Rectangle dominantArea = PlatformDataKeys.DOMINANT_HINT_AREA_RECTANGLE.getData(context);
     if (dominantArea != null && !myRequestFocus) {
@@ -894,7 +882,7 @@ public class AbstractPopup implements JBPopup {
       int i = Registry.intValue("ide.popup.resizable.border.sensitivity", 4);
       WindowResizeListener resizeListener = new WindowResizeListener(
         myContent,
-        myMovable ? JBUI.insets(i, i, i, i) : JBUI.insets(0, 0, i, i),
+        myMovable ? JBUI.insets(i) : JBUI.insets(0, 0, i, i),
         isToDrawMacCorner() ? AllIcons.General.MacCorner : null) {
         private Cursor myCursor;
 
@@ -1138,8 +1126,7 @@ public class AbstractPopup implements JBPopup {
     }, KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
 
 
-    mySearchKeyListener = new SpeedSearchKeyListener();
-    myContent.addKeyListener(mySearchKeyListener);
+    myContent.addKeyListener(mySpeedSearch);
 
     if (myCancelOnMouseOutCallback != null || myCancelOnWindow) {
       myMouseOutCanceller = new Canceller();
@@ -1161,7 +1148,12 @@ public class AbstractPopup implements JBPopup {
     };
     Disposer.register(this, focusWatcher);
 
-    mySpeedSearchPatternField = new SearchTextField(false);
+    mySpeedSearchPatternField = new SearchTextField(false) {
+      @Override
+      protected void onFieldCleared() {
+        mySpeedSearch.reset();
+      }
+    };
     mySpeedSearchPatternField.getTextEditor().setFocusable(false);
     if (SystemInfo.isMac) {
       RelativeFont.TINY.install(mySpeedSearchPatternField);
@@ -1395,7 +1387,7 @@ public class AbstractPopup implements JBPopup {
       Container parent = myContent.getParent();
       if (parent != null) parent.remove(myContent);
       myContent.removeAll();
-      myContent.removeKeyListener(mySearchKeyListener);
+      myContent.removeKeyListener(mySpeedSearch);
     }
     myContent = null;
     myPreferredFocusedComponent = null;
@@ -1887,29 +1879,12 @@ public class AbstractPopup implements JBPopup {
       return handler.fun(e);
     }
     else {
-      if (isCloseRequest(e) && myCancelKeyEnabled) {
+      if (isCloseRequest(e) && myCancelKeyEnabled && !mySpeedSearch.isHoldingFilter()) {
         cancel(e);
         return true;
       }
     }
     return false;
-  }
-
-  private class SpeedSearchKeyListener implements KeyListener {
-    @Override
-    public void keyTyped(final KeyEvent e) {
-      mySpeedSearch.process(e);
-    }
-
-    @Override
-    public void keyPressed(final KeyEvent e) {
-      mySpeedSearch.process(e);
-    }
-
-    @Override
-    public void keyReleased(final KeyEvent e) {
-      mySpeedSearch.process(e);
-    }
   }
 
   @NotNull

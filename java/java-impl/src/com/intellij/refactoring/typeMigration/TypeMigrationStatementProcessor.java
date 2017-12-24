@@ -38,7 +38,6 @@ import java.util.Map;
 
 /**
  * @author anna
- * Date: 04-Apr-2008
  */
 class TypeMigrationStatementProcessor extends JavaRecursiveElementVisitor {
   private final PsiElement myStatement;
@@ -341,21 +340,11 @@ class TypeMigrationStatementProcessor extends JavaRecursiveElementVisitor {
   }
 
   @Override
-  public void visitPostfixExpression(final PsiPostfixExpression expression) {
-    super.visitPostfixExpression(expression);
-    processUnaryExpression(expression, expression.getOperationSign());
-  }
-
-  @Override
-  public void visitPrefixExpression(final PsiPrefixExpression expression) {
-    super.visitPrefixExpression(expression);
-    processUnaryExpression(expression, expression.getOperationSign());
-  }
-
-  private void processUnaryExpression(final PsiExpression expression, PsiJavaToken sign) {
+  public void visitUnaryExpression(final PsiUnaryExpression expression) {
+    super.visitUnaryExpression(expression);
     final TypeView typeView = new TypeView(expression);
     if (typeView.isChanged()) {
-      if (!TypeConversionUtil.isUnaryOperatorApplicable(sign, typeView.getType())) {
+      if (!TypeConversionUtil.isUnaryOperatorApplicable(expression.getOperationSign(), typeView.getType())) {
         findConversionOrFail(expression, expression, typeView.getTypePair());
       }
     }
@@ -705,7 +694,8 @@ class TypeMigrationStatementProcessor extends JavaRecursiveElementVisitor {
         PsiField field = (PsiField) resolved;
         final NavigatablePsiElement containingMethod = PsiTreeUtil.getParentOfType(expression, PsiMethod.class, PsiLambdaExpression.class);
         if (containingMethod instanceof PsiMethod) {
-          final PsiMethod setter = PropertyUtil.findPropertySetter(field.getContainingClass(), field.getName(), field.hasModifierProperty(PsiModifier.STATIC), false);
+          final PsiMethod setter = PropertyUtilBase
+            .findPropertySetter(field.getContainingClass(), field.getName(), field.hasModifierProperty(PsiModifier.STATIC), false);
           if (containingMethod.isEquivalentTo(setter)) {
             return true;
           }

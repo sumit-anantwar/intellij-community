@@ -34,8 +34,6 @@ import java.util.Map;
  *
  * Created by IntelliJ IDEA.
  * User: Irina.Chernushina
- * Date: 1/24/12
- * Time: 12:29 PM
  */
 public class PortableStatus extends Status {
 
@@ -164,12 +162,11 @@ public class PortableStatus extends Status {
    * @return the item ancestor's URL
    */
   @Override
-  public String getCopyFromURL() {
+  public SVNURL getCopyFromURL() {
     if (! isCopied()) return null;
     final Info info = initInfo();
     if (info == null) return null;
-    SVNURL url = initInfo().getCopyFromURL();
-    return url == null ? null : url.toString();
+    return initInfo().getCopyFromURL();
   }
 
   @Override

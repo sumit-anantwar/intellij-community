@@ -32,6 +32,7 @@ import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.extensions.Extensions;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.openapi.progress.util.BackgroundTaskUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.project.ProjectManagerListener;
@@ -285,7 +286,7 @@ public class ProjectLevelVcsManagerImpl extends ProjectLevelVcsManagerEx impleme
 
   @Override
   @Nullable
-  public AbstractVcs getVcsFor(final FilePath file) {
+  public AbstractVcs getVcsFor(@NotNull FilePath file) {
     final VirtualFile vFile = ChangesUtil.findValidParentAccurately(file);
     return ReadAction.compute(() -> {
       if (!ApplicationManager.getApplication().isUnitTestMode() && !myProject.isInitialized()) return null;
@@ -314,11 +315,11 @@ public class ProjectLevelVcsManagerImpl extends ProjectLevelVcsManagerEx impleme
 
   @Override
   @Nullable
-  public VcsRoot getVcsRootObjectFor(final VirtualFile file) {
+  public VcsRoot getVcsRootObjectFor(@Nullable VirtualFile file) {
+    if (file == null) return null;
     final VcsDirectoryMapping mapping = myMappings.getMappingFor(file);
-    if (mapping == null) {
-      return null;
-    }
+    if (mapping == null) return null;
+
     final String directory = mapping.getDirectory();
     final AbstractVcs vcs = findVcsByName(mapping.getVcs());
     if (directory.isEmpty()) {
@@ -329,25 +330,19 @@ public class ProjectLevelVcsManagerImpl extends ProjectLevelVcsManagerEx impleme
 
   @Override
   @Nullable
-  public VirtualFile getVcsRootFor(final FilePath file) {
-    if (myProject.isDisposed()) return null;
+  public VirtualFile getVcsRootFor(@Nullable FilePath file) {
+    if (file == null || myProject.isDisposed()) return null;
+
     VirtualFile vFile = ChangesUtil.findValidParentAccurately(file);
-    if (vFile != null) {
-      return getVcsRootFor(vFile);
-    }
-    return null;
+    return vFile != null ? getVcsRootFor(vFile) : null;
   }
 
   @Override
-  public VcsRoot getVcsRootObjectFor(final FilePath file) {
-    if (myProject.isDisposed()) {
-      return null;
-    }
+  public VcsRoot getVcsRootObjectFor(@Nullable FilePath file) {
+    if (file == null || myProject.isDisposed()) return null;
+
     VirtualFile vFile = ChangesUtil.findValidParentAccurately(file);
-    if (vFile != null) {
-      return getVcsRootObjectFor(vFile);
-    }
-    return null;
+    return vFile != null ? getVcsRootObjectFor(vFile) : null;
   }
 
   public void unregisterVcs(@NotNull AbstractVcs vcs) {
@@ -636,7 +631,10 @@ public class ProjectLevelVcsManagerImpl extends ProjectLevelVcsManagerEx impleme
 
   @Override
   public void startBackgroundVcsOperation() {
-    myBackgroundOperationCounter.incrementAndGet();
+    int counter = myBackgroundOperationCounter.incrementAndGet();
+    if (counter == 1) {
+      myProject.getMessageBus().syncPublisher(BackgroundVfsOperationListener.TOPIC).backgroundVcsOperationStarted();
+    }
   }
 
   @Override
@@ -645,6 +643,9 @@ public class ProjectLevelVcsManagerImpl extends ProjectLevelVcsManagerEx impleme
     assert !ApplicationManager.getApplication().isDispatchThread() || ApplicationManager.getApplication().isUnitTestMode();
     int counter = myBackgroundOperationCounter.getAndDecrement();
     LOG.assertTrue(counter > 0, "myBackgroundOperationCounter was " + counter + " while should have been > 0");
+    if (counter == 1) {
+      myProject.getMessageBus().syncPublisher(BackgroundVfsOperationListener.TOPIC).backgroundVcsOperationStopped();
+    }
   }
 
   @Override
@@ -699,7 +700,7 @@ public class ProjectLevelVcsManagerImpl extends ProjectLevelVcsManagerEx impleme
 
   @Override
   public void notifyDirectoryMappingChanged() {
-    myProject.getMessageBus().syncPublisher(VCS_CONFIGURATION_CHANGED).directoryMappingChanged();
+    BackgroundTaskUtil.syncPublisher(myProject, VCS_CONFIGURATION_CHANGED).directoryMappingChanged();
   }
 
   void readDirectoryMappings(final Element element) {
@@ -850,13 +851,17 @@ public class ProjectLevelVcsManagerImpl extends ProjectLevelVcsManagerEx impleme
   }
 
   @Override
-  public boolean isIgnored(VirtualFile vf) {
-    if (Registry.is("ide.hide.excluded.files")) {
-      return myExcludedIndex.isExcludedFile(vf);
-    }
-    else {
-      return myExcludedIndex.isUnderIgnored(vf);
-    }
+  public boolean isIgnored(@NotNull VirtualFile vf) {
+    return ReadAction.compute(() -> {
+      if (myProject.isDisposed()) return false;
+
+      if (Registry.is("ide.hide.excluded.files")) {
+        return myExcludedIndex.isExcludedFile(vf);
+      }
+      else {
+        return myExcludedIndex.isUnderIgnored(vf);
+      }
+    });
   }
 
   private boolean isInDirectoryBasedRoot(@Nullable VirtualFile file) {

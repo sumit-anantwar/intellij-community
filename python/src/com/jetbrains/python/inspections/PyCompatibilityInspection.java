@@ -238,21 +238,6 @@ public class PyCompatibilityInspection extends PyInspection {
         }
       }
 
-      final PyFromImportStatement fromImportStatement = PsiTreeUtil.getParentOfType(importElement, PyFromImportStatement.class);
-      if (fromImportStatement != null) {
-        final QualifiedName qName = importElement.getImportedQName();
-        final QualifiedName sourceQName = fromImportStatement.getImportSourceQName();
-
-        if (qName != null && sourceQName != null && qName.matches("unicode_literals") && sourceQName.matches("__future__")) {
-          registerForAllMatchingVersions(level -> level.isOlderThan(LanguageLevel.PYTHON26),
-                                         " not have unicode_literals in __future__ module",
-                                         importElement,
-                                         null);
-        }
-
-        return;
-      }
-
       final QualifiedName qName = importElement.getImportedQName();
       if (qName != null && !qName.matches("builtins") && !qName.matches("__builtin__")) {
         final String moduleName = qName.toString();
@@ -285,14 +270,14 @@ public class PyCompatibilityInspection extends PyInspection {
     @Override
     public void visitPyArgumentList(final PyArgumentList node) { //PY-5588
       if (node.getParent() instanceof PyClass) {
-        final boolean isPy3 = LanguageLevel.forElement(node).isPy3K();
-        if (myVersionsToProcess.stream().anyMatch(level -> level.isOlderThan(LanguageLevel.PYTHON30)) || !isPy3) {
+        final boolean isPython2 = LanguageLevel.forElement(node).isPython2();
+        if (myVersionsToProcess.stream().anyMatch(level -> level.isOlderThan(LanguageLevel.PYTHON30)) || isPython2) {
           Arrays
             .stream(node.getArguments())
             .filter(PyKeywordArgument.class::isInstance)
             .forEach(expression -> myHolder.registerProblem(expression,
                                                             "This syntax available only since py3",
-                                                            isPy3
+                                                            !isPython2
                                                             ? ProblemHighlightType.GENERIC_ERROR_OR_WARNING
                                                             : ProblemHighlightType.GENERIC_ERROR));
         }

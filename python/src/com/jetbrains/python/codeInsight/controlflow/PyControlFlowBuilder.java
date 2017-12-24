@@ -25,12 +25,14 @@ import com.intellij.psi.PsiNamedElement;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.QualifiedName;
 import com.jetbrains.python.PyNames;
+import com.jetbrains.python.PyTokenTypes;
 import com.jetbrains.python.psi.*;
 import com.jetbrains.python.psi.impl.ParamHelper;
 import com.jetbrains.python.psi.impl.PyAugAssignmentStatementNavigator;
 import com.jetbrains.python.psi.impl.PyConstantExpressionEvaluator;
 import com.jetbrains.python.psi.impl.PyImportStatementNavigator;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -59,6 +61,10 @@ public class PyControlFlowBuilder extends PyRecursiveElementVisitor {
     final ReadWriteInstruction instruction = ReadWriteInstruction.write(myBuilder, node, node.getName());
     myBuilder.addNode(instruction);
     myBuilder.checkPending(instruction);
+  }
+
+  @Override
+  public void visitPyDecoratorList(PyDecoratorList node) {
   }
 
   private void visitDecorators(PyDecoratorList list) {
@@ -387,6 +393,29 @@ public class PyControlFlowBuilder extends PyRecursiveElementVisitor {
   }
 
   @Override
+  public void visitPyBinaryExpression(PyBinaryExpression node) {
+    final PyElementType operator = node.getOperator();
+    if (operator == PyTokenTypes.AND_KEYWORD || operator == PyTokenTypes.OR_KEYWORD) {
+      myBuilder.startNode(node);
+      final PyExpression left = node.getLeftExpression();
+      final PyTypeAssertionEvaluator assertionEvaluator = new PyTypeAssertionEvaluator(operator == PyTokenTypes.AND_KEYWORD);
+      if (left != null) {
+        left.accept(this);
+        left.accept(assertionEvaluator);
+      }
+      final PyExpression right = node.getRightExpression();
+      if (right != null) {
+        InstructionBuilder.addAssertInstructions(myBuilder, assertionEvaluator);
+        right.accept(this);
+        myBuilder.addPendingEdge(node, myBuilder.prevInstruction);
+      }
+    }
+    else {
+      super.visitPyBinaryExpression(node);
+    }
+  }
+
+  @Override
   public void visitPyWhileStatement(final PyWhileStatement node) {
     final Instruction instruction = myBuilder.startNode(node);
     final PyWhilePart whilePart = node.getWhilePart();
@@ -427,7 +456,7 @@ public class PyControlFlowBuilder extends PyRecursiveElementVisitor {
     }
     final Instruction head = myBuilder.prevInstruction;
     final PyElsePart elsePart = node.getElsePart();
-    if (elsePart == null) {
+    if (elsePart == null && !nonEmptyIterationSource(source)) {
       myBuilder.addPendingEdge(node, myBuilder.prevInstruction);
     }
     final PyStatementList list = forPart.getStatementList();
@@ -460,6 +489,13 @@ public class PyControlFlowBuilder extends PyRecursiveElementVisitor {
       myBuilder.addPendingEdge(node, myBuilder.prevInstruction);
     }
     myBuilder.flowAbrupted();
+  }
+
+  private static boolean nonEmptyIterationSource(@Nullable PyExpression source) {
+    return
+      source instanceof PySequenceExpression && !((PySequenceExpression)source).isEmpty() ||
+      source instanceof PyStringLiteralExpression && !((PyStringLiteralExpression)source).getStringValue().isEmpty() ||
+      source instanceof PyParenthesizedExpression && nonEmptyIterationSource(((PyParenthesizedExpression)source).getContainedExpression());
   }
 
   @Override

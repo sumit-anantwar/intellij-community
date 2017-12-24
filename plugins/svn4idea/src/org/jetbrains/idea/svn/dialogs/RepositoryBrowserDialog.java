@@ -1,17 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
  */
 package org.jetbrains.idea.svn.dialogs;
 
@@ -154,9 +142,6 @@ public class RepositoryBrowserDialog extends DialogWrapper {
                                                               InputEvent.ALT_MASK | InputEvent.ALT_DOWN_MASK)), browser);
 
     AnAction action = CommonActionsManager.getInstance().createCollapseAllAction(new TreeExpander() {
-      public void expandAll() {
-      }
-
       public boolean canExpand() {
         return false;
       }
@@ -230,7 +215,7 @@ public class RepositoryBrowserDialog extends DialogWrapper {
 
     myRepositoriesLabel = new JLabel(myRepositoriesLabelText);
     top.add(myRepositoriesLabel);
-    top.add(createToolbar(true, null));
+    top.add(createToolbar(true, (AnAction[])null));
     parentPanel.add(top, BorderLayout.NORTH);
 
     JComponent panel =  createBrowserComponent(false);
@@ -353,7 +338,7 @@ public class RepositoryBrowserDialog extends DialogWrapper {
       String url = node.getURL().toDecodedString();
 
       AbstractVcsHelper.getInstance(myProject)
-        .showFileHistory(myVCS.getVcsHistoryProvider(), VcsUtil.getFilePathOnNonLocal(url, isDirectory), myVCS, url);
+        .showFileHistory(myVCS.getVcsHistoryProvider(), VcsUtil.getFilePathOnNonLocal(url, isDirectory), myVCS);
       node.reload(false);
     }
   }
@@ -1045,7 +1030,7 @@ public class RepositoryBrowserDialog extends DialogWrapper {
           return;
         }
 
-      SvnCheckoutProvider.doCheckout(myProject, dir, url.toString(), revision, dialog.getDepth(), dialog.isIgnoreExternals(), listener);
+      SvnCheckoutProvider.doCheckout(myProject, dir, url, revision, dialog.getDepth(), dialog.isIgnoreExternals(), listener);
     }
   }
 

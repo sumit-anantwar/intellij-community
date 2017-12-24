@@ -263,8 +263,7 @@ public class CustomizationUtil {
 
   private static ActionUrl[] getChildUserObjects(DefaultMutableTreeNode node, ActionUrl parent) {
     ArrayList<ActionUrl> result = new ArrayList<>();
-    ArrayList<String> groupPath = new ArrayList<>();
-    groupPath.addAll(parent.getGroupPath());
+    ArrayList<String> groupPath = new ArrayList<>(parent.getGroupPath());
     for (int i = 0; i < node.getChildCount(); i++) {
       DefaultMutableTreeNode child = (DefaultMutableTreeNode)node.getChildAt(i);
       ActionUrl url = new ActionUrl();
@@ -279,7 +278,7 @@ public class CustomizationUtil {
   @NotNull
   public static MouseListener installPopupHandler(JComponent component, @NotNull String groupId, String place) {
     ActionManager actionManager = ActionManager.getInstance();
-    ActionGroup group = (ActionGroup)actionManager.getAction(groupId);
+    ActionGroup group = (ActionGroup)CustomActionsSchema.getInstance().getCorrectedAction(groupId);
     return PopupHandler.installPopupHandler(component, group, place, actionManager);
   }
 }

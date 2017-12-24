@@ -21,7 +21,7 @@ import com.intellij.ui.ColorUtil;
 import com.intellij.ui.Gray;
 import com.intellij.ui.JBGradientPaint;
 import com.intellij.util.ui.EmptyIcon;
-import com.intellij.util.ui.GraphicsUtil;
+import com.intellij.util.ui.JBInsets;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import sun.swing.SwingUtilities2;
@@ -45,17 +45,18 @@ public class DarculaRadioButtonUI extends MetalRadioButtonUI {
   @Override
   public synchronized void paint(Graphics g2d, JComponent c) {
     Graphics2D g = (Graphics2D)g2d;
-
     Dimension size = c.getSize();
 
     Rectangle viewRect = new Rectangle(size);
     Rectangle iconRect = new Rectangle();
     Rectangle textRect = new Rectangle();
     AbstractButton b = (AbstractButton) c;
-    //ButtonModel model = b.getModel();
+
     Font f = c.getFont();
     g.setFont(f);
     FontMetrics fm = SwingUtilities2.getFontMetrics(c, g, f);
+
+    JBInsets.removeFrom(viewRect, c.getInsets());
 
     String text = SwingUtilities.layoutCompoundLabel(
       c, fm, b.getText(), getDefaultIcon(),
@@ -81,72 +82,88 @@ public class DarculaRadioButtonUI extends MetalRadioButtonUI {
     viewRect.width -= (i.right + viewRect.x);
     viewRect.height -= (i.bottom + viewRect.y);
 
-    int rad = JBUI.scale(5);
+    g = (Graphics2D)g.create();
+    try {
+      g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+      g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_DEFAULT);
 
-    // Paint the radio button
-    final int x = iconRect.x + (rad - (rad % 2 == 1?1:0))/2;
-    final int y = iconRect.y + (rad - (rad % 2 == 1?1:0))/2;
-    final int w = iconRect.width - rad;
-    final int h = iconRect.height - rad;
+      int rad = JBUI.scale(5);
+      int x = iconRect.x + (rad - (rad % 2 == 1 ? 1 : 0)) / 2;
+      int y = iconRect.y + (rad - (rad % 2 == 1 ? 1 : 0)) / 2;
+      int w = iconRect.width - rad;
+      int h = iconRect.height - rad;
 
-    g.translate(x, y);
-    //noinspection UseJBColor
-    final JBGradientPaint ijGradient = new JBGradientPaint(c, new Color(0x4985e4), new Color(0x4074c9));
+      g.translate(x, y);
 
-    //setup AA for lines
-    final GraphicsConfig config = GraphicsUtil.setupAAPainting(g);
-    final boolean focus = c.hasFocus();
-    final boolean selected = ((AbstractButton)c).isSelected();
-    if (UIUtil.isUnderDarcula() || !selected) {
-      g.setPaint(UIUtil.getGradientPaint(0, 0, ColorUtil.shift(c.getBackground(), 1.5),
-                                         0, c.getHeight(), ColorUtil.shift(c.getBackground(), 1.2)));
-    } else {
-      g.setPaint(ijGradient);
-    }
-    if (!UIUtil.isUnderDarcula() && selected) {
-      final GraphicsConfig fillOvalConf = new GraphicsConfig(g);
-      g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
-      g.fillOval(0, JBUI.scale(1), w, h);
-      fillOvalConf.restore();
-    } else {
-      if (focus) {
+      //noinspection UseJBColor
+      JBGradientPaint ijGradient = new JBGradientPaint(c, new Color(0x4985e4), new Color(0x4074c9));
+
+      //setup AA for lines
+      boolean focus = c.hasFocus();
+      boolean selected = ((AbstractButton)c).isSelected();
+
+      if (UIUtil.isUnderDarcula() || !selected) {
+        g.setPaint(UIUtil.getGradientPaint(0, 0, ColorUtil.shift(c.getBackground(), 1.5),
+                                           0, c.getHeight(), ColorUtil.shift(c.getBackground(), 1.2)));
+      } else {
+        //noinspection UseJBColor
+        g.setPaint(ijGradient);
+      }
+
+      if (!UIUtil.isUnderDarcula() && selected) {
+        GraphicsConfig fillOvalConf = new GraphicsConfig(g);
+        g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
         g.fillOval(0, JBUI.scale(1), w, h);
+        fillOvalConf.restore();
       } else {
-        g.fillOval(0, JBUI.scale(1), w - JBUI.scale(1), h - JBUI.scale(1));
-      }
-    }
-
-    if (focus) {
-      if (JBUI.isPixHiDPI(c)) {
-        DarculaUIUtil.paintFocusOval(g, JBUI.scale(1), JBUI.scale(1) + 1, w - JBUI.scale(2), h - JBUI.scale(2));
-      } else {
-        DarculaUIUtil.paintFocusOval(g, 0, JBUI.scale(1), w, h);
-      }
-    } else {
-      if (UIUtil.isUnderDarcula()) {
-        g.setPaint(UIUtil.getGradientPaint(w / 2, 1, Gray._160.withAlpha(90), w / 2, h, Gray._100.withAlpha(90)));
-        g.drawOval(0, JBUI.scale(1)+1, w - 1, h - 1);
-
-        g.setPaint(Gray._40.withAlpha(200));
-        g.drawOval(0, JBUI.scale(1), w - 1, h - 1);
-      } else {
-        g.setPaint(selected ? ijGradient : c.isEnabled() ? Gray._30 : Gray._130);
-        if (!selected) {
-          g.drawOval(0, JBUI.scale(1), w - 1, h - 1);
+        if (focus) {
+          g.fillOval(0, JBUI.scale(1), w, h);
+        } else if (c.isEnabled()){
+          g.fillOval(0, JBUI.scale(1), w - JBUI.scale(1), h - JBUI.scale(1));
         }
       }
-    }
 
-    if (selected) {
-      final boolean enabled = c.isEnabled();
-      g.setColor(UIManager.getColor(enabled ? "RadioButton.darcula.selectionEnabledShadowColor" : "RadioButton.darcula.selectionDisabledShadowColor"));// ? Gray._30 : Gray._60);
-      final int yOff = 1 + JBUI.scale(1);
-      g.fillOval(w/2 - rad/2, h/2 - rad/2 + yOff , rad, rad);
-      g.setColor(UIManager.getColor(enabled ? "RadioButton.darcula.selectionEnabledColor" : "RadioButton.darcula.selectionDisabledColor")); //Gray._170 : Gray._120);
-      g.fillOval(w/2 - rad/2, h/2 - rad/2 -1 + yOff, rad, rad);
+      if (focus) {
+        if (JBUI.isPixHiDPI(c)) {
+          DarculaUIUtil.paintFocusOval(g, JBUI.scale(1), JBUI.scale(1) + 1, w - JBUI.scale(2), h - JBUI.scale(2));
+        } else {
+          DarculaUIUtil.paintFocusOval(g, 0, JBUI.scale(1), w, h);
+        }
+      } else {
+        if (UIUtil.isUnderDarcula()) {
+          if (c.isEnabled()) {
+            g.setPaint(UIUtil.getGradientPaint(w / 2, 1, Gray._160.withAlpha(90), w / 2, h, Gray._100.withAlpha(90)));
+            g.drawOval(0, JBUI.scale(1) + 1, w - 1, h - 1);
+
+            g.setPaint(Gray._40.withAlpha(200));
+            g.drawOval(0, JBUI.scale(1), w - 1, h - 1);
+          } else {
+            g.setColor(Gray.x58);
+            g.drawOval(0, JBUI.scale(1), w - 1, h - 1);
+          }
+        } else {
+          g.setPaint(selected ? ijGradient : c.isEnabled() ? Gray._30 : Gray._130);
+          if (!selected) {
+            g.drawOval(0, JBUI.scale(1) + 1, w - 1, h - 1);
+          }
+        }
+      }
+
+      if (selected) {
+        boolean enabled = c.isEnabled();
+        int yOff = 1 + JBUI.scale(1);
+
+        if (!UIUtil.isUnderDarcula() || enabled) {
+          g.setColor(UIManager.getColor(enabled ? "RadioButton.darcula.selectionEnabledShadowColor" : "RadioButton.darcula.selectionDisabledShadowColor"));
+          g.fillOval(w/2 - rad/2, h/2 - rad/2 + yOff , rad, rad);
+        }
+
+        g.setColor(UIManager.getColor(enabled ? "RadioButton.darcula.selectionEnabledColor" : "RadioButton.darcula.selectionDisabledColor"));
+        g.fillOval(w/2 - rad/2, h/2 - rad/2 - 1 + yOff, rad, rad);
+      }
+    } finally {
+      g.dispose();
     }
-    config.restore();
-    g.translate(-x, -y);
   }
 
   protected void drawText(AbstractButton b, Graphics2D g, String text, Rectangle textRect, FontMetrics fm) {
@@ -176,9 +193,7 @@ public class DarculaRadioButtonUI extends MetalRadioButtonUI {
   }
 
   @Override
-  protected void paintFocus(Graphics g, Rectangle t, Dimension d) {
-
-  }
+  protected void paintFocus(Graphics g, Rectangle t, Dimension d) {}
 
   @Override
   public Icon getDefaultIcon() {

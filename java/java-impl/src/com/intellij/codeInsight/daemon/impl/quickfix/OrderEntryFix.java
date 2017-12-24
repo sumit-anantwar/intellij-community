@@ -29,6 +29,8 @@ import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.*;
 import com.intellij.openapi.roots.libraries.Library;
+import com.intellij.openapi.util.Segment;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -56,11 +58,43 @@ import java.util.stream.Stream;
  * @author cdr
  */
 public abstract class OrderEntryFix implements IntentionAction, LocalQuickFix {
-  protected OrderEntryFix() { }
+  private final SmartPsiFileRange myReferencePointer;
+
+  protected OrderEntryFix(@Nullable PsiReference reference) {
+    myReferencePointer = createReferencePointer(reference);
+  }
+
+  @Nullable
+  private static SmartPsiFileRange createReferencePointer(@Nullable PsiReference reference) {
+    if (reference != null) {
+      PsiElement element = reference.getElement();
+      int offset = element.getTextRange().getStartOffset() + reference.getRangeInElement().getStartOffset();
+      PsiFile file = element.getContainingFile();
+      if (areReferencesEquivalent(reference, file.findReferenceAt(offset))) {
+        return SmartPointerManager.getInstance(element.getProject()).createSmartPsiFileRangePointer(file, TextRange.from(offset, 0));
+      }
+    }
+    return null;
+  }
+
+  private static boolean areReferencesEquivalent(@NotNull PsiReference ref1, @Nullable PsiReference ref2) {
+    if (ref2 == null) return false;
+    if (ref1.getClass() != ref2.getClass()) return false;
+    if (ref1.getElement() != ref2.getElement()) return false;
+    if (!ref1.getRangeInElement().equals(ref2.getRangeInElement())) return false;
+    return true;
+  }
+
+  @Nullable
+  protected PsiReference restoreReference() {
+    PsiFile file = myReferencePointer == null ? null : myReferencePointer.getContainingFile();
+    Segment range = myReferencePointer == null ? null : myReferencePointer.getPsiRange();
+    return file == null || range == null ? null : file.findReferenceAt(range.getStartOffset());
+  }
 
   @Override
   public boolean startInWriteAction() {
-    return true;
+    return false;
   }
 
   @Override
@@ -89,9 +123,11 @@ public abstract class OrderEntryFix implements IntentionAction, LocalQuickFix {
     Module currentModule = fileIndex.getModuleForFile(refVFile);
     if (currentModule == null) return null;
 
+    DependencyScope scope = fileIndex.isInTestSourceContent(refVFile) ? DependencyScope.TEST : DependencyScope.COMPILE;
+
     if (reference instanceof PsiJavaModuleReference) {
       List<LocalQuickFix> result = ContainerUtil.newSmartList();
-      createModuleFixes((PsiJavaModuleReference)reference, currentModule, refVFile, result);
+      createModuleFixes((PsiJavaModuleReference)reference, currentModule, scope, result);
       result.forEach(fix -> registrar.register((IntentionAction)fix));
       return result;
     }
@@ -99,7 +135,7 @@ public abstract class OrderEntryFix implements IntentionAction, LocalQuickFix {
     List<LocalQuickFix> result = ContainerUtil.newSmartList();
     JavaPsiFacade facade = JavaPsiFacade.getInstance(psiElement.getProject());
 
-    registerExternalFixes(registrar, reference, psiElement, shortReferenceName, facade, currentModule, result);
+    registerExternalFixes(reference, psiElement, shortReferenceName, facade, currentModule, scope, registrar, result);
     if (!result.isEmpty()) {
       return result;
     }
@@ -110,7 +146,7 @@ public abstract class OrderEntryFix implements IntentionAction, LocalQuickFix {
       return result;
     }
 
-    OrderEntryFix moduleDependencyFix = new AddModuleDependencyFix(currentModule, refVFile, allowedDependencies, reference);
+    OrderEntryFix moduleDependencyFix = new AddModuleDependencyFix(reference, currentModule, scope, allowedDependencies);
     registrar.register(moduleDependencyFix);
     result.add(moduleDependencyFix);
 
@@ -140,9 +176,9 @@ public abstract class OrderEntryFix implements IntentionAction, LocalQuickFix {
             continue;
           }
 
-          OrderEntryFix platformFix = new AddLibraryToDependenciesFix(currentModule, library, reference, aClass.getQualifiedName());
-          registrar.register(platformFix);
-          result.add(platformFix);
+          OrderEntryFix fix = new AddLibraryDependencyFix(reference, currentModule, library, scope, false, aClass.getQualifiedName());
+          registrar.register(fix);
+          result.add(fix);
         }
       }
     }
@@ -152,13 +188,17 @@ public abstract class OrderEntryFix implements IntentionAction, LocalQuickFix {
 
   private static void createModuleFixes(PsiJavaModuleReference reference,
                                         Module currentModule,
-                                        VirtualFile refVFile,
+                                        DependencyScope scope,
                                         List<LocalQuickFix> result) {
     ProjectFileIndex index = ProjectRootManager.getInstance(currentModule.getProject()).getFileIndex();
     List<PsiElement> targets = Stream.of(reference.multiResolve(true))
       .map(ResolveResult::getElement)
       .filter(Objects::nonNull)
       .collect(Collectors.toList());
+
+    PsiElement statement = reference.getElement().getParent();
+    boolean exported = statement instanceof PsiRequiresStatement &&
+                       ((PsiRequiresStatement)statement).hasModifierProperty(PsiModifier.TRANSITIVE);
 
     Set<Module> modules = targets.stream()
       .map(e -> !(e instanceof PsiCompiledElement) ? e.getContainingFile() : null)
@@ -168,7 +208,7 @@ public abstract class OrderEntryFix implements IntentionAction, LocalQuickFix {
       .filter(m -> m != null && m != currentModule)
       .collect(Collectors.toSet());
     if (!modules.isEmpty()) {
-      result.add(0, new AddModuleDependencyFix(currentModule, refVFile, modules, reference));
+      result.add(0, new AddModuleDependencyFix(reference, currentModule, modules, scope, exported));
     }
 
     targets.stream()
@@ -178,27 +218,30 @@ public abstract class OrderEntryFix implements IntentionAction, LocalQuickFix {
       .map(e -> e instanceof LibraryOrderEntry ? ((LibraryOrderEntry)e).getLibrary() : null)
       .filter(Objects::nonNull)
       .distinct()
-      .forEach(l -> result.add(new AddLibraryToDependenciesFix(currentModule, l, reference, null)));
+      .forEach(l -> result.add(new AddLibraryDependencyFix(reference, currentModule, l, scope, exported, null)));
   }
 
-  private static void registerExternalFixes(@NotNull QuickFixActionRegistrar registrar,
-                                            @NotNull PsiReference reference,
+  private static void registerExternalFixes(PsiReference reference,
                                             PsiElement psiElement,
                                             String shortReferenceName,
                                             JavaPsiFacade facade,
                                             Module currentModule,
+                                            DependencyScope scope,
+                                            QuickFixActionRegistrar registrar,
                                             List<LocalQuickFix> result) {
     String fullReferenceText = reference.getCanonicalText();
+    ThreeState refToAnnotation = isReferenceToAnnotation(psiElement);
     for (ExternalLibraryResolver resolver : ExternalLibraryResolver.EP_NAME.getExtensions()) {
-      ExternalClassResolveResult resolveResult = resolver.resolveClass(shortReferenceName, isReferenceToAnnotation(psiElement), currentModule);
+      ExternalClassResolveResult resolveResult = resolver.resolveClass(shortReferenceName, refToAnnotation, currentModule);
       OrderEntryFix fix = null;
-      if (resolveResult != null && facade.findClass(resolveResult.getQualifiedClassName(), currentModule.getModuleWithDependenciesAndLibrariesScope(true)) == null) {
-        fix = new AddExternalLibraryToDependenciesQuickFix(currentModule, resolveResult.getLibrary(), reference, resolveResult.getQualifiedClassName());
+      if (resolveResult != null &&
+          facade.findClass(resolveResult.getQualifiedClassName(), currentModule.getModuleWithDependenciesAndLibrariesScope(true)) == null) {
+        fix = new AddExtLibraryDependencyFix(reference, currentModule, resolveResult.getLibrary(), scope, resolveResult.getQualifiedClassName());
       }
       else if (!fullReferenceText.equals(shortReferenceName)) {
         ExternalLibraryDescriptor descriptor = resolver.resolvePackage(fullReferenceText);
         if (descriptor != null) {
-          fix = new AddExternalLibraryToDependenciesQuickFix(currentModule, descriptor, reference, null);
+          fix = new AddExtLibraryDependencyFix(reference, currentModule, descriptor, scope, null);
         }
       }
       if (fix != null) {

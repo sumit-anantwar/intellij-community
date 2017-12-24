@@ -87,7 +87,7 @@ public class GeneralIdBasedToSMTRunnerEventsConvertor extends GeneralTestEventsP
 
       fireOnTestingFinished(myTestsRootProxy);
     });
-    stopEventProcessing();
+    super.onFinishTesting();
   }
 
   @Override
@@ -135,6 +135,7 @@ public class GeneralIdBasedToSMTRunnerEventsConvertor extends GeneralTestEventsP
 
     String nodeName = startedNodeEvent.getName();
     SMTestProxy childProxy = new SMTestProxy(nodeName, suite, startedNodeEvent.getLocationUrl(), startedNodeEvent.getMetainfo(), true);
+    childProxy.putUserData(SMTestProxy.NODE_ID, startedNodeEvent.getId());
     childProxy.setTreeBuildBeforeStart();
     TestProxyPrinterProvider printerProvider = myTestProxyPrinterProvider;
     String nodeType = startedNodeEvent.getNodeType();
@@ -235,13 +236,7 @@ public class GeneralIdBasedToSMTRunnerEventsConvertor extends GeneralTestEventsP
     addToInvokeLater(() -> {
       Node activeNode = findActiveNode();
       SMTestProxy activeProxy = activeNode.getProxy();
-      if (ProcessOutputTypes.STDERR.equals(outputType)) {
-        activeProxy.addStdErr(text);
-      } else if (ProcessOutputTypes.SYSTEM.equals(outputType)) {
-        activeProxy.addSystemOutput(text);
-      } else {
-        activeProxy.addStdOutput(text, outputType);
-      }
+      activeProxy.addOutput(text, outputType);
     });
   }
 

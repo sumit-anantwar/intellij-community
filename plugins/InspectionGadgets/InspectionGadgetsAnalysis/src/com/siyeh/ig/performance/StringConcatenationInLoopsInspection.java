@@ -17,6 +17,8 @@ package com.siyeh.ig.performance;
 
 import com.intellij.codeInsight.PsiEquivalenceUtil;
 import com.intellij.codeInspection.ProblemDescriptor;
+import com.intellij.codeInspection.dataFlow.CommonDataflow;
+import com.intellij.codeInspection.dataFlow.DfaFactType;
 import com.intellij.codeInspection.util.ChangeToAppendUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.text.StringUtil;
@@ -178,7 +180,7 @@ public class StringConcatenationInLoopsInspection extends BaseInspection {
         if (expression == null) return true;
         PsiElement parent = PsiUtil.skipParenthesizedExprUp(expression.getParent());
         while (parent instanceof PsiTypeCastExpression || parent instanceof PsiConditionalExpression) {
-          parent = PsiUtil.skipParenthesizedExprUp(expression.getParent());
+          parent = PsiUtil.skipParenthesizedExprUp(parent.getParent());
         }
         if (parent instanceof PsiExpressionList ||
             (parent instanceof PsiAssignmentExpression &&
@@ -329,7 +331,13 @@ public class StringConcatenationInLoopsInspection extends BaseInspection {
         return ct.text(initializer);
       }
       String text = initializer == null || ExpressionUtils.isLiteral(initializer, "") ? "" : ct.text(initializer);
-      return "new " + myTargetType + "(" + text + ")";
+      String stringBuilderText = "new " + myTargetType + "(" + text + ")";
+      PsiReferenceExpression ref = ObjectUtils.tryCast(PsiUtil.skipParenthesizedExprDown(initializer), PsiReferenceExpression.class);
+      if (ref != null && ref.getQualifierExpression() == null &&
+          !Boolean.FALSE.equals(CommonDataflow.getExpressionFact(ref, DfaFactType.CAN_BE_NULL))) {
+        return ref.getText() + "==null?null:" + stringBuilderText;
+      }
+      return stringBuilderText;
     }
 
     void replaceAll(PsiVariable variable,

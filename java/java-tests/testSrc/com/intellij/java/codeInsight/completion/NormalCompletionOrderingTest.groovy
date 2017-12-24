@@ -443,8 +443,8 @@ interface TxANotAnno {}
     checkPreferredItems(0, 'fooBar', '_fooBar', 'FooBar')
   }
 
-  void testDispreferUnderscoredCaseMismatch() {
-    checkPreferredItems(0, 'fooBar', '__FOO_BAR')
+  void testDispreferUnderscoredCaseMatch() {
+    checkPreferredItems(0, 'fooBar', '__foo_bar')
   }
 
   void testStatisticsMattersOnNextCompletion() {
@@ -785,6 +785,47 @@ class ContainerUtil extends ContainerUtilRt {
 
   void testPreferConflictingFieldAfterThis() {
     checkPreferredItems 0, 'text'
+  }
+
+  void testDoNotPreselectShorterDeprecatedClasses() {
+    checkPreferredItems 1, 'XLong', 'XLonger'
+  }
+
+  void testSignatureBeforeStats() {
+    myFixture.configureByText 'a.java', '''
+class Foo { 
+  void foo(int a, int b) {
+    Stri<caret>
+    bar();
+  }
+  
+  void bar(int a, int b) {} 
+}'''
+    myFixture.completeBasic()
+    myFixture.assertPreferredCompletionItems 0, 'String'
+    myFixture.type('\n') // increase String statistics
+    myFixture.type('foo;\nbar(')
+    myFixture.completeBasic()
+    myFixture.assertPreferredCompletionItems 0, 'a', 'b', 'a, b'
+  }
+
+  void "test selecting static field after static method"() {
+    myFixture.configureByText 'a.java', 'class Foo { { System.<caret> } }'
+    myFixture.completeBasic()
+    myFixture.type('ex\n2);\n') // select 'exit'
+    
+    myFixture.type('System.')
+    myFixture.completeBasic()
+    myFixture.assertPreferredCompletionItems 0, 'exit'
+    myFixture.type('ou\n;\n') // select 'out'
+
+    myFixture.type('System.')
+    myFixture.completeBasic()
+    myFixture.assertPreferredCompletionItems 0, 'out', 'exit'    
+  }
+
+  void testPreferTypeToGeneratedMethod() {
+    checkPreferredItems 0, 'String', 'public String getZoo', 'public String toString'
   }
 
 }

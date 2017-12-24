@@ -19,7 +19,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.util.io.FileUtil;
-import com.intellij.openapi.vcs.actions.BackgroundTaskGroup;
+import org.jetbrains.idea.svn.BackgroundTaskGroup;
 import com.intellij.util.concurrency.Semaphore;
 import org.jetbrains.annotations.CalledInAny;
 import org.jetbrains.annotations.CalledInAwt;
@@ -34,7 +34,7 @@ import java.io.File;
 import java.util.List;
 
 import static com.intellij.openapi.application.ApplicationManager.getApplication;
-import static org.jetbrains.idea.svn.SvnUtil.*;
+import static org.jetbrains.idea.svn.SvnUtil.checkRepositoryVersion15;
 import static org.jetbrains.idea.svn.WorkingCopyFormat.ONE_DOT_EIGHT;
 import static org.jetbrains.idea.svn.integrate.SvnBranchPointsCalculator.WrapperInvertor;
 
@@ -99,7 +99,7 @@ public class QuickMerge extends BackgroundTaskGroup {
 
     mySemaphore.down();
     runInEdt(() -> {
-      if (areInSameHierarchy(createUrl(myMergeContext.getSourceUrl()), myMergeContext.getWcInfo().getUrl())) {
+      if (areInSameHierarchy(myMergeContext.getSourceUrl(), myMergeContext.getWcInfo().getUrl())) {
         end("Cannot merge from self", true);
       }
       else if (!hasSwitchedRoots() || myInteraction.shouldContinueSwitchedRootFound()) {
@@ -191,7 +191,7 @@ public class QuickMerge extends BackgroundTaskGroup {
   @NotNull
   private Task newIntegrateTask(@NotNull String title, @NotNull MergerFactory mergerFactory) {
     return new SvnIntegrateChangesTask(myMergeContext.getVcs(), new WorkingCopyInfo(myMergeContext.getWcInfo().getPath(), true),
-                                       mergerFactory, parseUrl(myMergeContext.getSourceUrl()), title, false,
+                                       mergerFactory, myMergeContext.getSourceUrl(), title, false,
                                        myMergeContext.getBranchName()) {
       @Override
       public void onFinished() {

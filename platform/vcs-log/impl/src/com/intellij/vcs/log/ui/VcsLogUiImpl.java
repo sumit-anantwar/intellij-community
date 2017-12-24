@@ -100,7 +100,7 @@ public class VcsLogUiImpl extends AbstractVcsLogUi {
       showWarningWithLink("Commit " + commitId.toString() + " does not exist or does not match active filters",
                           "Reset filters and search again.", () -> {
           getFilterUi().setFilter(null);
-          invokeOnChange(() -> jumpTo(commitId, rowGetter, SettableFuture.create()));
+          invokeOnChange(() -> jumpTo(commitId, rowGetter, SettableFuture.create()), pack -> pack.getFilters().isEmpty());
         });
     }
   }
@@ -209,6 +209,10 @@ public class VcsLogUiImpl extends AbstractVcsLogUi {
     @Override
     public void onColumnOrderChanged() {
       myMainFrame.getGraphTable().onColumnOrderSettingChanged();
+    }
+
+    @Override
+    public void onShowChangesFromParentsChanged() {
     }
 
     @Override

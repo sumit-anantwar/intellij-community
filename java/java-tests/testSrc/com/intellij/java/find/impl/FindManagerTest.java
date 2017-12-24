@@ -608,7 +608,28 @@ public class FindManagerTest extends DaemonAnalyzerTestCase {
       fixture.tearDown();
     }
   }
+  
+  public void testFindInCommentsInJsInsideHtml() {
+    FindModel findModel = FindManagerTestUtils.configureFindModel("@param t done");
 
+    String text = "<script>\n" +
+                  "/**\n" +
+                  " * @param t done\n" +
+                  " * @param t done\n" +
+                  " * @param t done\n" +
+                  "*/</script>";
+    findModel.setSearchContext(FindModel.SearchContext.IN_COMMENTS);
+    FindManager findManager = FindManager.getInstance(myProject);
+    FindManagerTestUtils.runFindForwardAndBackward(findManager, findModel, text, "html");
+
+    findModel.setRegularExpressions(true);
+    FindManagerTestUtils.runFindForwardAndBackward(findManager, findModel, text, "html");
+
+    FindManagerTestUtils.runFindForwardAndBackward(findManager, findModel, text, "php");
+    findModel.setRegularExpressions(false);
+    FindManagerTestUtils.runFindForwardAndBackward(findManager, findModel, text, "php");
+  }
+  
   public void testFindInCommentsAndLiterals() {
     FindModel findModel = FindManagerTestUtils.configureFindModel("done");
 
@@ -1056,14 +1077,15 @@ public class FindManagerTest extends DaemonAnalyzerTestCase {
     String dirName = directory.getPresentableUrl();
 
     FindModel model = new FindModel();
+    checkContext(model, myProject, null, null, true, null, null, false);
     model.setDirectoryName("initialDirectoryName");
     model.setModuleName("initialModuleName");
     model.setProjectScope(false);
     model.setCustomScopeName("initialScopeName");
 
-    checkContext(model, myProject, directory, module, false, null, moduleName, false);
-    checkContext(model, myProject, directory, null, false, dirName, moduleName, false);//prev module state
-    checkContext(model, myProject, null, null, true, dirName, moduleName, false);//prev module and dir state
+    checkContext(model, myProject, directory, module, false, dirName, moduleName, false);
+    checkContext(model, myProject, directory, null, false, dirName, moduleName, false);//prev directory state
+    checkContext(model, myProject, null, null, false, dirName, moduleName, false);//prev module and dir state
     model.setCustomScope(scope);
     model.setCustomScope(true);
     checkContext(model, myProject, null, null, false, dirName, moduleName, true);//prev module and dir state

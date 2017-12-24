@@ -16,8 +16,6 @@
 package org.jetbrains.plugins.gradle.importing;
 
 import com.intellij.compiler.CompilerConfiguration;
-import com.intellij.compiler.CompilerConfigurationImpl;
-import com.intellij.compiler.CompilerWorkspaceConfiguration;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
@@ -130,25 +128,20 @@ public class GradleMiscImportingTest extends GradleImportingTestCase {
   @TargetVersions("3.4+")
   public void testJdkName() throws Exception {
     Sdk myJdk = createJdk("MyJDK");
-    edt(() -> ApplicationManager.getApplication().runWriteAction(() -> ProjectJdkTable.getInstance().addJdk(myJdk)));
-    try {
-      importProject(
-        "apply plugin: 'java'\n" +
-        "apply plugin: 'idea'\n" +
-        "idea {\n" +
-        "  module {\n" +
-        "    jdkName = 'MyJDK'\n" +
-        "  }\n" +
-        "}\n"
-      );
+    edt(() -> ApplicationManager.getApplication().runWriteAction(() -> ProjectJdkTable.getInstance().addJdk(myJdk, myProject)));
+    importProject(
+      "apply plugin: 'java'\n" +
+      "apply plugin: 'idea'\n" +
+      "idea {\n" +
+      "  module {\n" +
+      "    jdkName = 'MyJDK'\n" +
+      "  }\n" +
+      "}\n"
+    );
 
-      assertModules("project", "project_main", "project_test");
-      assertTrue(getSdkForModule("project_main") == myJdk);
-      assertTrue(getSdkForModule("project_test") == myJdk);
-
-    } finally {
-      edt(() -> ApplicationManager.getApplication().runWriteAction(() -> ProjectJdkTable.getInstance().removeJdk(myJdk)));
-    }
+    assertModules("project", "project_main", "project_test");
+    assertTrue(getSdkForModule("project_main") == myJdk);
+    assertTrue(getSdkForModule("project_test") == myJdk);
   }
 
   @Test
@@ -163,46 +156,6 @@ public class GradleMiscImportingTest extends GradleImportingTestCase {
 
     importProject();
     assertModules("project", "project_test");
-  }
-
-  @Test
-  public void testCompilerConfigurationSettingsImport() throws Exception {
-    final String pathToPlugin = getClass().getResource("/testCompilerConfigurationSettingsImport/gradle-idea-ext.jar").toString();
-
-    importProject(
-      "buildscript {\n" +
-      "  dependencies {\n" +
-      "     classpath files('" + pathToPlugin + "')\n" +
-      "  }\n" +
-      "}\n" +
-      "apply plugin: 'org.jetbrains.gradle.plugin.idea-ext'\n" +
-      "idea {\n" +
-      "  project.settings {\n" +
-      "    compiler {\n" +
-      "      resourcePatterns '!*.java;!*.class'\n" +
-      "      clearOutputDirectory false\n" +
-      "      addNotNullAssertions false\n" +
-      "      autoShowFirstErrorInEditor false\n" +
-      "      displayNotificationPopup false\n" +
-      "      enableAutomake false\n" +
-      "      parallelCompilation true\n" +
-      "      rebuildModuleOnDependencyChange false\n" +
-      "    }\n" +
-      "  }\n" +
-      "}"
-    );
-
-    final CompilerConfigurationImpl compilerConfiguration = (CompilerConfigurationImpl)CompilerConfiguration.getInstance(myProject);
-    final CompilerWorkspaceConfiguration workspaceConfiguration = CompilerWorkspaceConfiguration.getInstance(myProject);
-
-    assertSameElements(compilerConfiguration.getResourceFilePatterns(), "!*.class", "!*.java");
-    assertFalse(workspaceConfiguration.CLEAR_OUTPUT_DIRECTORY);
-    assertFalse(compilerConfiguration.isAddNotNullAssertions());
-    assertFalse(workspaceConfiguration.AUTO_SHOW_ERRORS_IN_EDITOR);
-    assertFalse(workspaceConfiguration.DISPLAY_NOTIFICATION_POPUP);
-    assertFalse(workspaceConfiguration.MAKE_PROJECT_ON_SAVE);
-    assertTrue(workspaceConfiguration.PARALLEL_COMPILATION);
-    assertFalse(workspaceConfiguration.REBUILD_ON_DEPENDENCY_CHANGE);
   }
 
   private LanguageLevel getLanguageLevelForModule(final String moduleName) {

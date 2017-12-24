@@ -105,6 +105,11 @@ public class ChangesUtil {
     return ContainerUtil.map2SetNotNull(changes, change -> getVcsForChange(change, project));
   }
 
+  @NotNull
+  public static Set<AbstractVcs> getAffectedVcsesForFiles(@NotNull Collection<VirtualFile> files, @NotNull Project project) {
+    return ContainerUtil.map2SetNotNull(files, file -> getVcsForFile(file, project));
+  }
+
   @Nullable
   public static AbstractVcs getVcsForFile(@NotNull VirtualFile file, @NotNull Project project) {
     return ProjectLevelVcsManager.getInstance(project).getVcsFor(file);
@@ -145,6 +150,15 @@ public class ChangesUtil {
   @NotNull
   public static Stream<VirtualFile> getFiles(@NotNull Stream<Change> changes) {
     return getPaths(changes)
+      .map(FilePath::getVirtualFile)
+      .filter(Objects::nonNull);
+  }
+
+  @NotNull
+  public static Stream<VirtualFile> getAfterRevisionsFiles(@NotNull Stream<Change> changes) {
+    return changes
+      .map(ChangesUtil::getAfterPath)
+      .filter(Objects::nonNull)
       .map(FilePath::getVirtualFile)
       .filter(Objects::nonNull);
   }

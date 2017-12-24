@@ -5,6 +5,8 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.util.Pair;
+import com.intellij.xdebugger.XSourcePosition;
 import com.intellij.xdebugger.breakpoints.SuspendPolicy;
 import com.intellij.xdebugger.frame.XValueChildrenList;
 import com.jetbrains.python.console.pydev.PydevCompletionVariant;
@@ -37,15 +39,13 @@ public class ClientModeMultiProcessDebugger implements ProcessDebugger {
     myPort = port;
 
     myMainDebugger = createDebugger();
-
-    myOtherDebuggers.add(myMainDebugger);
   }
 
   @NotNull
   private RemoteDebugger createDebugger() {
     return new RemoteDebugger(myDebugProcess, myHost, myPort) {
       @Override
-      protected void onProcessCreatedEvent() throws PyDebuggerException {
+      protected void onProcessCreatedEvent() {
         ApplicationManager.getApplication().executeOnPooledThread(ClientModeMultiProcessDebugger.this::connectToSubprocess);
       }
     };
@@ -53,7 +53,7 @@ public class ClientModeMultiProcessDebugger implements ProcessDebugger {
 
   @Override
   public boolean isConnected() {
-    return getOtherDebuggers().stream().anyMatch(RemoteDebugger::isConnected);
+    return allDebuggers().stream().anyMatch(RemoteDebugger::isConnected);
   }
 
   @Override
@@ -97,8 +97,10 @@ public class ClientModeMultiProcessDebugger implements ProcessDebugger {
   }
 
   private List<RemoteDebugger> allDebuggers() {
-    List<RemoteDebugger> result = new ArrayList<>();
+    List<RemoteDebugger> result;
     synchronized (myOtherDebuggersObject) {
+      result = new ArrayList<>(myOtherDebuggers.size() + 1);
+      result.add(myMainDebugger);
       result.addAll(myOtherDebuggers);
     }
     return result;
@@ -183,6 +185,13 @@ public class ClientModeMultiProcessDebugger implements ProcessDebugger {
   @Override
   public PyDebugValue changeVariable(String threadId, String frameId, PyDebugValue var, String value) throws PyDebuggerException {
     return debugger(threadId).changeVariable(threadId, frameId, var, value);
+  }
+
+  @Override
+  public void loadFullVariableValues(@NotNull String threadId,
+                                     @NotNull String frameId,
+                                     @NotNull List<PyFrameAccessor.PyAsyncValue<String>> vars) throws PyDebuggerException {
+    debugger(threadId).loadFullVariableValues(threadId, frameId, vars);
   }
 
   @Override
@@ -322,6 +331,14 @@ public class ClientModeMultiProcessDebugger implements ProcessDebugger {
   @Override
   public void resumeOrStep(String threadId, ResumeOrStepCommand.Mode mode) {
     debugger(threadId).resumeOrStep(threadId, mode);
+  }
+
+  @Override
+  public void setNextStatement(@NotNull String threadId,
+                               @NotNull XSourcePosition sourcePosition,
+                               @Nullable String functionName,
+                               @NotNull PyDebugCallback<Pair<Boolean, String>> callback) {
+    debugger(threadId).setNextStatement(threadId, sourcePosition, functionName, callback);
   }
 
   @Override

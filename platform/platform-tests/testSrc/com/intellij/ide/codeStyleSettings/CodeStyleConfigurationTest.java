@@ -16,6 +16,7 @@
 package com.intellij.ide.codeStyleSettings;
 
 import com.intellij.lang.xml.XMLLanguage;
+import com.intellij.openapi.util.JDOMUtil;
 import com.intellij.psi.codeStyle.CodeStyleSettings;
 import com.intellij.psi.codeStyle.CodeStyleSettingsCustomizable;
 import com.intellij.psi.codeStyle.CommonCodeStyleSettings;
@@ -23,6 +24,8 @@ import org.jdom.Element;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * @author Rustam Vishnyakov
@@ -30,7 +33,7 @@ import java.lang.reflect.Modifier;
 public class CodeStyleConfigurationTest extends CodeStyleTestCase {
 
   /**
-   * Check that indent options are correcly read if mixed with other language options
+   * Check that indent options are correctly read if mixed with other language options
    */
   public void testIndentOptionsRead() {
     org.jdom.Element rootElement = new Element("option");
@@ -116,17 +119,42 @@ public class CodeStyleConfigurationTest extends CodeStyleTestCase {
       "  <option name=\"OTHER_INDENT_OPTIONS\">\n" +
       "    <value>\n" +
       "      <option name=\"INDENT_SIZE\" value=\"2\" />\n" +
-      "      <option name=\"CONTINUATION_INDENT_SIZE\" value=\"8\" />\n" +
-      "      <option name=\"TAB_SIZE\" value=\"4\" />\n" +
-      "      <option name=\"USE_TAB_CHARACTER\" value=\"false\" />\n" +
-      "      <option name=\"SMART_TABS\" value=\"false\" />\n" +
-      "      <option name=\"LABEL_INDENT_SIZE\" value=\"0\" />\n" +
-      "      <option name=\"LABEL_INDENT_ABSOLUTE\" value=\"false\" />\n" +
-      "      <option name=\"USE_RELATIVE_INDENTS\" value=\"false\" />\n" +
       "    </value>\n" +
       "  </option>\n" +
       "</option>",
       root);
+  }
+
+  public void testSaveSoftMargins() throws Exception {
+    CodeStyleSettings settings = new CodeStyleSettings();
+    settings.setDefaultRightMargin(110);
+    settings.setDefaultSoftMargins(Arrays.asList(60, 80, 140));
+    Element root = createOption("config", "root");
+    settings.writeExternal(root);
+    root.removeAttribute("version");
+    assertXmlOutputEquals(
+      "<option name=\"config\" value=\"root\">\n" +
+      "  <option name=\"RIGHT_MARGIN\" value=\"110\" />\n" +
+      "  <option name=\"SOFT_MARGINS\" value=\"60,80,140\" />\n" +
+      "</option>",
+      root);
+  }
+
+  public void testReadSoftMargins() throws Exception {
+    CodeStyleSettings settings = new CodeStyleSettings();
+    String source =
+      "<option name=\"config\" value=\"root\">\n" +
+      "  <option name=\"RIGHT_MARGIN\" value=\"110\" />\n" +
+      "  <option name=\"SOFT_MARGINS\" value=\"60,80,140\" />\n" +
+      "</option>";
+    Element root = JDOMUtil.load(source);
+    settings.readExternal(root);
+    assertEquals(110, settings.getDefaultRightMargin());
+    List<Integer> softMargins = settings.getDefaultSoftMargins();
+    assertEquals(3, softMargins.size());
+    assertEquals(60, softMargins.get(0).intValue());
+    assertEquals(80, softMargins.get(1).intValue());
+    assertEquals(140, softMargins.get(2).intValue());
   }
 
 

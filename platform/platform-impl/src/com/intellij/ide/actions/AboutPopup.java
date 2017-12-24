@@ -20,7 +20,6 @@ import com.intellij.ide.BrowserUtil;
 import com.intellij.ide.IdeBundle;
 import com.intellij.ide.ui.UISettings;
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CustomShortcutSet;
 import com.intellij.openapi.application.ApplicationInfo;
 import com.intellij.openapi.application.ApplicationNamesInfo;
@@ -355,7 +354,8 @@ public class AboutPopup {
       config.restore();
       if (myShowCopy) {
         JBPoint coord = getCopyIconCoord();
-        config = new GraphicsConfig(g).paintWithAlpha(myShowCopyAlpha);
+        float alpha = myShowCopyAlpha;
+        config = new GraphicsConfig(g).paintWithAlpha(Math.min(1f, Math.max(0f, alpha)));
         AllIcons.General.CopyHovered.paintIcon(this, g, coord.x, coord.y);
         config.restore();
       }
@@ -363,7 +363,13 @@ public class AboutPopup {
 
     @NotNull
     protected String getCopyrightText() {
-      return "\u00A9 2000\u2013" + Calendar.getInstance(Locale.US).get(Calendar.YEAR) + " JetBrains s.r.o. All rights reserved.";
+      ApplicationInfo applicationInfo = ApplicationInfo.getInstance();
+      return "Copyright \u00A9 " + 
+             ((ApplicationInfoImpl)applicationInfo).getCopyrightStart() + 
+             "\u2013" + 
+             Calendar.getInstance(Locale.US).get(Calendar.YEAR) + 
+             " " + 
+             applicationInfo.getCompanyName();
     }
 
     @NotNull
@@ -587,12 +593,8 @@ public class AboutPopup {
     public void setInfoSurface(InfoSurface infoSurface) {
       myInfoSurface = infoSurface;
       add(infoSurface, BorderLayout.NORTH);
-      new DumbAwareAction() {
-        @Override
-        public void actionPerformed(AnActionEvent e) {
-          copyInfoToClipboard(myInfoSurface.getText());
-        }
-      }.registerCustomShortcutSet(CustomShortcutSet.fromString("meta C", "control C"), this);
+      DumbAwareAction.create(e -> copyInfoToClipboard(myInfoSurface.getText()))
+        .registerCustomShortcutSet(CustomShortcutSet.fromString("meta C", "control C"), this);
     }
 
     protected class AccessiblePopupPanel extends AccessibleJPanel implements AccessibleAction {

@@ -26,7 +26,7 @@ import org.jetbrains.idea.devkit.inspections.quickfix.RegisterActionFix;
 import org.jetbrains.idea.devkit.util.ActionData;
 import org.jetbrains.idea.devkit.util.PsiUtil;
 
-@TestDataPath("$CONTENT_ROOT/../testData/inspections/componentNotRegistered")
+@TestDataPath("$CONTENT_ROOT/testData/inspections/componentNotRegistered")
 public class ComponentNotRegisteredInspectionTest extends PluginModuleTestCase {
 
   @Override
@@ -68,6 +68,12 @@ public class ComponentNotRegisteredInspectionTest extends PluginModuleTestCase {
                                 "META-INF/optional-plugin.xml");
 
     myFixture.testHighlighting("RegisteredAction.java");
+  }
+
+  public void testRegisteredInIncludedFileAction() {
+    setPluginXml("ActionXInclude.xml");
+    myFixture.copyFileToProject("ActionXInclude_included.xml", "META-INF/ActionXInclude_included.xml");
+    myFixture.testHighlighting("ActionXInclude.java");
   }
 
   public void testUnregisteredAction() {

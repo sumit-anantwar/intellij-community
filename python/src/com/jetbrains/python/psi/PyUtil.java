@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.python.psi;
 
 import com.google.common.collect.Collections2;
@@ -96,22 +82,10 @@ import static com.jetbrains.python.psi.PyFunction.Modifier.CLASSMETHOD;
 import static com.jetbrains.python.psi.PyFunction.Modifier.STATICMETHOD;
 
 public class PyUtil {
-  private PyUtil() {
-  }
 
-  @NotNull
-  public static <T extends PyElement> T[] getAllChildrenOfType(@NotNull PsiElement element, @NotNull Class<T> aClass) {
-    List<T> result = new SmartList<>();
-    for (PsiElement child : element.getChildren()) {
-      if (instanceOf(child, aClass)) {
-        //noinspection unchecked
-        result.add((T)child);
-      }
-      else {
-        ContainerUtil.addAll(result, getAllChildrenOfType(child, aClass));
-      }
-    }
-    return ArrayUtil.toObjectArray(result, aClass);
+  private static final boolean VERBOSE_MODE = System.getenv().get("_PYCHARM_VERBOSE_MODE") != null;
+
+  private PyUtil() {
   }
 
   /**
@@ -165,18 +139,6 @@ public class PyUtil {
   public static List<PyExpression> flattenedParensAndStars(PyExpression... targets) {
     return unfoldParentheses(targets, new ArrayList<>(targets.length), false, true);
   }
-
-  // Poor man's filter
-  // TODO: move to a saner place
-
-  public static boolean instanceOf(Object obj, Class... possibleClasses) {
-    if (obj == null || possibleClasses == null) return false;
-    for (Class cls : possibleClasses) {
-      if (cls.isInstance(obj)) return true;
-    }
-    return false;
-  }
-
 
   /**
    * Produce a reasonable representation of a PSI element, good for debugging.
@@ -287,21 +249,6 @@ public class PyUtil {
     if (!isLast) node.addChild(gen.createComma(), beforeThis);
     if (addWhitespace) node.addChild(ASTFactory.whitespace(" "), beforeThis);
   }
-
-  /**
-   * Collects superclasses of a class all the way up the inheritance chain. The order is <i>not</i> necessarily the MRO.
-   */
-  @NotNull
-  public static List<PyClass> getAllSuperClasses(@NotNull PyClass pyClass) {
-    List<PyClass> superClasses = new ArrayList<>();
-    for (PyClass ancestor : pyClass.getAncestorClasses(null)) {
-      if (!PyNames.TYPES_INSTANCE_TYPE.equals(ancestor.getQualifiedName())) {
-        superClasses.add(ancestor);
-      }
-    }
-    return superClasses;
-  }
-
 
   // TODO: move to a more proper place?
 
@@ -586,14 +533,6 @@ public class PyUtil {
     return !isListComprehension || isAtLeast30;
   }
 
-  public static boolean hasCustomDecorators(@NotNull PyDecoratable decoratable) {
-    return PyKnownDecoratorUtil.hasNonBuiltinDecorator(decoratable, TypeEvalContext.codeInsightFallback(null));
-  }
-
-  public static boolean isDecoratedAsAbstract(@NotNull final PyDecoratable decoratable) {
-    return PyKnownDecoratorUtil.hasAbstractDecorator(decoratable, TypeEvalContext.codeInsightFallback(null));
-  }
-
   public static ASTNode createNewName(PyElement element, String name) {
     return PyElementGenerator.getInstance(element.getProject()).createNameIdentifier(name, LanguageLevel.forElement(element));
   }
@@ -843,13 +782,40 @@ public class PyUtil {
     });
   }
 
-  public static <T, P> T getParameterizedCachedValue(@NotNull PsiElement element, @Nullable P param, @NotNull NullableFunction<P, T> f) {
+  /**
+   * Calculates and caches value based on param. Think about it as about map with param as key which flushes on each psi modification.
+   *
+   * For nullable function see {@link #getNullableParameterizedCachedValue(PsiElement, Object, NullableFunction)}.
+   *
+   * This function is used instead of {@link CachedValuesManager#createParameterizedCachedValue(ParameterizedCachedValueProvider, boolean)}
+   * because parameter is not used as key there but used only for first calculation. Hence this should have functional dependency on element.
+   *
+   * @param element place to store cache
+   * @param param   param to be used as key
+   * @param f       function to produce value for key
+   * @param <T>     value type
+   * @param <P>     key type
+   */
+  @NotNull
+  public static <T, P> T getParameterizedCachedValue(@NotNull PsiElement element, @Nullable P param, @NotNull NotNullFunction<P, T> f) {
+    final T result = getNullableParameterizedCachedValue(element, param, f);
+    assert result != null;
+    return result;
+  }
+
+  /**
+   * Same as {@link #getParameterizedCachedValue(PsiElement, Object, NotNullFunction)} but allows nulls.
+   */
+  @Nullable
+  public static <T, P> T getNullableParameterizedCachedValue(@NotNull PsiElement element,
+                                                             @Nullable P param,
+                                                             @NotNull NullableFunction<P, T> f) {
     final CachedValuesManager manager = CachedValuesManager.getManager(element.getProject());
     final Map<Optional<P>, Optional<T>> cache = CachedValuesManager.getCachedValue(element, manager.getKeyForClass(f.getClass()), () -> {
       // concurrent hash map is a null-hostile collection
       return CachedValueProvider.Result.create(Maps.newConcurrentMap(), PsiModificationTracker.MODIFICATION_COUNT);
     });
-    // Don't use ConcurrentHashMap#computeIfAbsent(), it blocks if the function tries to update the cache recursively for the same key 
+    // Don't use ConcurrentHashMap#computeIfAbsent(), it blocks if the function tries to update the cache recursively for the same key
     // during computation. We can accept here that some values will be computed several times due to non-atomic updates.
     final Optional<P> wrappedParam = Optional.ofNullable(param);
     Optional<T> value = cache.get(wrappedParam);
@@ -892,14 +858,14 @@ public class PyUtil {
    * @param runnable code to call
    */
   public static void verboseOnly(@NotNull final Runnable runnable) {
-    if (System.getenv().get("_PYCHARM_VERBOSE_MODE") != null) {
+    if (VERBOSE_MODE) {
       runnable.run();
     }
   }
 
   /**
    * Returns the line comment that immediately precedes statement list of the given compound statement. Python parser ensures
-   * that it follows the statement header, i.e. it's directly after the colon, not on its own line. 
+   * that it follows the statement header, i.e. it's directly after the colon, not on its own line.
    */
   @Nullable
   public static PsiComment getCommentOnHeaderLine(@NotNull PyStatementListContainer container) {
@@ -1462,8 +1428,8 @@ public class PyUtil {
       caretOffset--;
       element = psiFile.findElementAt(caretOffset);
     }
-    while (caretOffset >= lineStartOffset && instanceOf(element, toSkip));
-    return instanceOf(element, toSkip) ? null : element;
+    while (caretOffset >= lineStartOffset && PsiTreeUtil.instanceOf(element, toSkip));
+    return PsiTreeUtil.instanceOf(element, toSkip) ? null : element;
   }
 
   @Nullable
@@ -1497,11 +1463,11 @@ public class PyUtil {
       int lineNumber = document.getLineNumber(caretOffset);
       lineEndOffset = document.getLineEndOffset(lineNumber);
     }
-    while (caretOffset < lineEndOffset && instanceOf(element, toSkip)) {
+    while (caretOffset < lineEndOffset && PsiTreeUtil.instanceOf(element, toSkip)) {
       caretOffset++;
       element = psiFile.findElementAt(caretOffset);
     }
-    return instanceOf(element, toSkip) ? null : element;
+    return PsiTreeUtil.instanceOf(element, toSkip) ? null : element;
   }
 
   /**
@@ -1742,7 +1708,10 @@ public class PyUtil {
    * @param expectedPackage package like "django"
    * @param expectedName expected name (i.e. AppConfig)
    * @return true if element in package
+   * @deprecated  use {@link com.jetbrains.python.nameResolver.FQNamesProvider#isNameMatches(PyQualifiedNameOwner)}
+   * Remove in 2018
    */
+  @Deprecated
   public static boolean isSymbolInPackage(@NotNull final PyQualifiedNameOwner symbol,
                                           @NotNull final String expectedPackage,
                                           @NotNull final String expectedName) {
@@ -1863,7 +1832,7 @@ public class PyUtil {
     return false;
   }
 
-  private static boolean isStringLiteral(PyStatement stmt) {
+  public static boolean isStringLiteral(@Nullable PyStatement stmt) {
     if (stmt instanceof PyExpressionStatement) {
       final PyExpression expr = ((PyExpressionStatement)stmt).getExpression();
       if (expr instanceof PyStringLiteralExpression) {

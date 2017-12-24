@@ -138,24 +138,28 @@ public class PyAnnotateTypesIntention extends PyBaseIntentionAction {
       }
 
 
-      function = CodeInsightUtilCore.forcePsiPostprocessAndRestoreElement(function);
+      PsiElement element = CodeInsightUtilCore.forcePsiPostprocessAndRestoreElement(function);
+
+      while (element != null && !element.getText().contains(replacementTextBuilder.toString())) {
+        element = element.getParent();
+      }
       
-      if (function != null) {
+      if (element != null) {
         final TemplateBuilder builder =
-          TemplateBuilderFactory.getInstance().createTemplateBuilder(function);
+          TemplateBuilderFactory.getInstance().createTemplateBuilder(element);
 
         for (Pair<Integer, String> template : templates) {
           builder.replaceRange(TextRange.from(
-            offset - function.getTextRange().getStartOffset() + replacementTextBuilder.toString().indexOf('#') + template.first,
+            offset - element.getTextRange().getStartOffset() + replacementTextBuilder.toString().indexOf('#') + template.first,
             template.second.length()), template.second);
         }
 
-        startTemplate(project, function, builder);
+        startTemplate(project, element, builder);
       }
     }
   }
 
-  private static void startTemplate(Project project, PyCallable callable, TemplateBuilder builder) {
+  private static void startTemplate(Project project, PsiElement callable, TemplateBuilder builder) {
     final Template template = ((TemplateBuilderImpl)builder).buildInlineTemplate();
 
     int offset = callable.getTextRange().getStartOffset();
@@ -173,7 +177,7 @@ public class PyAnnotateTypesIntention extends PyBaseIntentionAction {
   }
 
   private static boolean isPy3k(PsiFile file) {
-    return LanguageLevel.forElement(file).isPy3K();
+    return !LanguageLevel.forElement(file).isPython2();
   }
 
   private static void generatePy3kTypeAnnotations(@NotNull Project project, Editor editor, PyCallable callable) {

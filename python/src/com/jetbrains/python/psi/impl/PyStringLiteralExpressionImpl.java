@@ -24,8 +24,12 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.*;
+import com.intellij.psi.PsiReferenceService.Hints;
 import com.intellij.psi.impl.source.resolve.reference.ReferenceProvidersRegistry;
 import com.intellij.psi.tree.IElementType;
+import com.intellij.psi.util.CachedValueProvider.Result;
+import com.intellij.psi.util.CachedValuesManager;
+import com.intellij.psi.util.PsiModificationTracker;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.jetbrains.python.PyTokenTypes;
 import com.jetbrains.python.codeInsight.regexp.PythonVerboseRegexpLanguage;
@@ -61,11 +65,13 @@ public class PyStringLiteralExpressionImpl extends PyElementImpl implements PySt
   }
 
   private static final Map<String, String> escapeMap = initializeEscapeMap();
-  private String stringValue;
-  private List<TextRange> valueTextRanges;
-  @Nullable private List<Pair<TextRange, String>> myDecodedFragments;
+
+  @Nullable private volatile String myStringValue;
+  @Nullable private volatile List<TextRange> myValueTextRanges;
+  @Nullable private volatile List<Pair<TextRange, String>> myDecodedFragments;
   private final DefaultRegExpPropertiesProvider myPropertiesProvider;
 
+  @NotNull
   private static Map<String, String> initializeEscapeMap() {
     Map<String, String> map = new HashMap<>();
     map.put("\n", "\n");
@@ -94,14 +100,15 @@ public class PyStringLiteralExpressionImpl extends PyElementImpl implements PySt
 
   public void subtreeChanged() {
     super.subtreeChanged();
-    stringValue = null;
-    valueTextRanges = null;
+    myStringValue = null;
+    myValueTextRanges = null;
     myDecodedFragments = null;
   }
 
   @NotNull
   public List<TextRange> getStringValueTextRanges() {
-    if (valueTextRanges == null) {
+    List<TextRange> result = myValueTextRanges;
+    if (result == null) {
       int elStart = getTextRange().getStartOffset();
       List<TextRange> ranges = new ArrayList<>();
       for (ASTNode node : getStringNodes()) {
@@ -109,9 +116,9 @@ public class PyStringLiteralExpressionImpl extends PyElementImpl implements PySt
         int nodeOffset = node.getStartOffset() - elStart;
         ranges.add(TextRange.from(nodeOffset + range.getStartOffset(), range.getLength()));
       }
-      valueTextRanges = Collections.unmodifiableList(ranges);
+      myValueTextRanges = result = Collections.unmodifiableList(ranges);
     }
-    return valueTextRanges;
+    return result;
   }
 
   // TODO replace all usages with PyStringLiteralUtil.getStringValue(String)
@@ -151,8 +158,9 @@ public class PyStringLiteralExpressionImpl extends PyElementImpl implements PySt
   @Override
   @NotNull
   public List<Pair<TextRange, String>> getDecodedFragments() {
-    if (myDecodedFragments == null) {
-      final List<Pair<TextRange, String>> result = new ArrayList<>();
+    List<Pair<TextRange, String>> result = myDecodedFragments;
+    if (result == null) {
+      result = new ArrayList<>();
       final int elementStart = getTextRange().getStartOffset();
       final boolean unicodeByDefault = isUnicodeByDefault();
       for (ASTNode node : getStringNodes()) {
@@ -166,7 +174,7 @@ public class PyStringLiteralExpressionImpl extends PyElementImpl implements PySt
       }
       myDecodedFragments = result;
     }
-    return myDecodedFragments;
+    return result;
   }
 
   @Override
@@ -248,17 +256,20 @@ public class PyStringLiteralExpressionImpl extends PyElementImpl implements PySt
     return Arrays.asList(getNode().getChildren(PyTokenTypes.STRING_NODES));
   }
 
+  @NotNull
+  @Override
   public String getStringValue() {
     //ASTNode child = getNode().getFirstChildNode();
     //assert child != null;
-    if (stringValue == null) {
+    String result = myStringValue;
+    if (result == null) {
       final StringBuilder out = new StringBuilder();
       for (Pair<TextRange, String> fragment : getDecodedFragments()) {
         out.append(fragment.getSecond());
       }
-      stringValue = out.toString();
+      myStringValue = result = out.toString();
     }
-    return stringValue;
+    return result;
   }
 
   @Nullable
@@ -306,9 +317,12 @@ public class PyStringLiteralExpressionImpl extends PyElementImpl implements PySt
     return PyBuiltinCache.getInstance(this).getBytesType(LanguageLevel.forElement(this));
   }
 
+  @Override
   @NotNull
-  public PsiReference[] getReferences() {
-    return ReferenceProvidersRegistry.getReferencesFromProviders(this, PsiReferenceService.Hints.NO_HINTS);
+  public final PsiReference[] getReferences() {
+    return CachedValuesManager.getCachedValue(this, () -> Result.create(
+      ReferenceProvidersRegistry.getReferencesFromProviders(this, Hints.NO_HINTS),
+      PsiModificationTracker.MODIFICATION_COUNT));
   }
 
   @Override
@@ -334,10 +348,12 @@ public class PyStringLiteralExpressionImpl extends PyElementImpl implements PySt
     };
   }
 
+  @Override
   public PsiLanguageInjectionHost updateText(@NotNull String text) {
     return ElementManipulators.handleContentChange(this, text);
   }
 
+  @Override
   @NotNull
   public LiteralTextEscaper<? extends PsiLanguageInjectionHost> createLiteralTextEscaper() {
     return new StringLiteralTextEscaper(this);
@@ -432,7 +448,7 @@ public class PyStringLiteralExpressionImpl extends PyElementImpl implements PySt
   }
 
   private boolean isVerboseInjection() {
-    List<Pair<PsiElement,TextRange>> files = InjectedLanguageManager.getInstance(getProject()).getInjectedPsiFiles(this);
+    List<Pair<PsiElement, TextRange>> files = InjectedLanguageManager.getInstance(getProject()).getInjectedPsiFiles(this);
     if (files != null) {
       for (Pair<PsiElement, TextRange> file : files) {
         Language language = file.getFirst().getLanguage();

@@ -34,6 +34,7 @@ import org.jetbrains.idea.maven.utils.library.propertiesEditor.RepositoryLibrary
 import javax.swing.*;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
+import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.ItemEvent;
@@ -55,12 +56,11 @@ public class RepositoryLibraryPropertiesEditor {
   private ComboBox versionSelector;
   private JPanel mainPanel;
   private JButton myReloadButton;
-  private JPanel versionPanel;
-  private JPanel failedToLoadPanel;
-  private JPanel loadingPanel;
   private JBCheckBox downloadSourcesCheckBox;
   private JBCheckBox downloadJavaDocsCheckBox;
   private JBLabel mavenCoordinates;
+  private JBCheckBox myIncludeTransitiveDepsCheckBox;
+  private JPanel myPropertiesPanel;
 
   @NotNull private ModelChangeListener onChangeListener;
 
@@ -71,7 +71,7 @@ public class RepositoryLibraryPropertiesEditor {
   public RepositoryLibraryPropertiesEditor(@Nullable Project project,
                                            RepositoryLibraryPropertiesModel model,
                                            RepositoryLibraryDescription description) {
-    this(project, model, description, new ModelChangeListener() {
+    this(project, model, description, true, new ModelChangeListener() {
       @Override
       public void onChange(RepositoryLibraryPropertiesEditor editor) {
 
@@ -83,12 +83,14 @@ public class RepositoryLibraryPropertiesEditor {
   public RepositoryLibraryPropertiesEditor(@Nullable Project project,
                                            final RepositoryLibraryPropertiesModel model,
                                            RepositoryLibraryDescription description,
+                                           boolean allowExcludingTransitiveDependencies,
                                            @NotNull final ModelChangeListener onChangeListener) {
     this.initialModel = model.clone();
     this.model = model;
     this.project = project == null ? ProjectManager.getInstance().getDefaultProject() : project;
     repositoryLibraryDescription = description;
     mavenCoordinates.setCopyable(true);
+    myIncludeTransitiveDepsCheckBox.setVisible(allowExcludingTransitiveDependencies);
     myReloadButton.addActionListener(new ActionListener() {
       @Override
       public void actionPerformed(ActionEvent e) {
@@ -201,9 +203,7 @@ public class RepositoryLibraryPropertiesEditor {
 
   private void setState(State state) {
     currentState = state;
-    versionPanel.setVisible(state == State.Loaded);
-    failedToLoadPanel.setVisible(state == State.FailedToLoad);
-    loadingPanel.setVisible(state == State.Loading);
+    ((CardLayout)myPropertiesPanel.getLayout()).show(myPropertiesPanel, state.name());
     onChangeListener.onChange(this);
   }
 
@@ -240,6 +240,14 @@ public class RepositoryLibraryPropertiesEditor {
       @Override
       public void stateChanged(ChangeEvent e) {
         model.setDownloadJavaDocs(downloadJavaDocsCheckBox.isSelected());
+        onChangeListener.onChange(RepositoryLibraryPropertiesEditor.this);
+      }
+    });
+    myIncludeTransitiveDepsCheckBox.setSelected(model.isIncludeTransitiveDependencies());
+    myIncludeTransitiveDepsCheckBox.addChangeListener(new ChangeListener() {
+      @Override
+      public void stateChanged(ChangeEvent e) {
+        model.setIncludeTransitiveDependencies(myIncludeTransitiveDepsCheckBox.isSelected());
         onChangeListener.onChange(RepositoryLibraryPropertiesEditor.this);
       }
     });

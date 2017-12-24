@@ -1,17 +1,5 @@
 /*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
  */
 package com.intellij.xdebugger;
 
@@ -69,7 +57,7 @@ public class XDebuggerTestUtil {
                                                                          Class<? extends XBreakpointType<B, ?>> breakpointType) {
     XLineBreakpointType type = (XLineBreakpointType)XDebuggerUtil.getInstance().findBreakpointType(breakpointType);
     XBreakpointManager manager = XDebuggerManager.getInstance(project).getBreakpointManager();
-    XLineBreakpointImpl breakpoint = (XLineBreakpointImpl)manager.findBreakpointAtLine(type, file, line);
+    XLineBreakpointImpl breakpoint = ReadAction.compute(() -> (XLineBreakpointImpl)manager.findBreakpointAtLine(type, file, line));
     assertNotNull(breakpoint);
     assertEquals(validity ? AllIcons.Debugger.Db_verified_breakpoint : AllIcons.Debugger.Db_invalid_breakpoint, breakpoint.getIcon());
     assertEquals(errorMessage, breakpoint.getErrorMessage());
@@ -131,12 +119,11 @@ public class XDebuggerTestUtil {
     return container.waitFor(TIMEOUT_MS);
   }
 
-  public static List<XStackFrame> collectFrames(@NotNull XDebugSession session) throws InterruptedException {
+  public static List<XStackFrame> collectFrames(@NotNull XDebugSession session) {
     return collectFrames(null, session);
   }
 
-  public static List<XStackFrame> collectFrames(@Nullable XExecutionStack thread, @NotNull XDebugSession session)
-    throws InterruptedException {
+  public static List<XStackFrame> collectFrames(@Nullable XExecutionStack thread, @NotNull XDebugSession session) {
     return collectFrames(thread == null ? getActiveThread(session) : thread);
   }
   
@@ -257,12 +244,11 @@ public class XDebuggerTestUtil {
     if (hasChildren != null) assertEquals(hasChildren, node.myHasChildren);
   }
 
-  public static void assertVariableValue(XValue var, @Nullable String name, @Nullable String value) throws InterruptedException {
+  public static void assertVariableValue(XValue var, @Nullable String name, @Nullable String value) {
     assertVariable(var, name, null, value, null);
   }
 
-  public static void assertVariableValue(Collection<XValue> vars, @Nullable String name, @Nullable String value)
-    throws InterruptedException {
+  public static void assertVariableValue(Collection<XValue> vars, @Nullable String name, @Nullable String value) {
     assertVariableValue(findVar(vars, name), name, value);
   }
 
@@ -275,7 +261,7 @@ public class XDebuggerTestUtil {
   public static void assertVariableValueMatches(@NotNull Collection<XValue> vars,
                                                 @Nullable String name,
                                                 @Nullable String type,
-                                                @Nullable @Language("RegExp") String valuePattern) throws InterruptedException {
+                                                @Nullable @Language("RegExp") String valuePattern) {
     assertVariableValueMatches(findVar(vars, name), name, type, valuePattern);
   }
 
@@ -283,20 +269,20 @@ public class XDebuggerTestUtil {
                                                 @Nullable String name,
                                                 @Nullable String type,
                                                 @Nullable @Language("RegExp") String valuePattern,
-                                                @Nullable Boolean hasChildren) throws InterruptedException {
+                                                @Nullable Boolean hasChildren) {
     assertVariableValueMatches(findVar(vars, name), name, type, valuePattern, hasChildren);
   }
 
   public static void assertVariableValueMatches(@NotNull XValue var,
                                                 @Nullable String name,
-                                                @Nullable @Language("RegExp") String valuePattern) throws InterruptedException {
+                                                @Nullable @Language("RegExp") String valuePattern) {
     assertVariableValueMatches(var, name, null, valuePattern);
   }
 
   public static void assertVariableValueMatches(@NotNull XValue var,
                                                 @Nullable String name,
                                                 @Nullable String type,
-                                                @Nullable @Language("RegExp") String valuePattern) throws InterruptedException {
+                                                @Nullable @Language("RegExp") String valuePattern) {
     assertVariableValueMatches(var, name, type, valuePattern, null);
   }
 
@@ -316,7 +302,7 @@ public class XDebuggerTestUtil {
 
   public static void assertVariableTypeMatches(@NotNull Collection<XValue> vars,
                                                @Nullable String name,
-                                               @Nullable @Language("RegExp") String typePattern) throws InterruptedException {
+                                               @Nullable @Language("RegExp") String typePattern) {
     assertVariableTypeMatches(findVar(vars, name), name, typePattern);
   }
 
@@ -355,11 +341,6 @@ public class XDebuggerTestUtil {
         @Override
         public void errorOccurred(@NotNull String errorMessage) {
           result.set(errorMessage);
-        }
-
-        @Override
-        public boolean isObsolete() {
-          return false;
         }
       });
 
@@ -433,7 +414,7 @@ public class XDebuggerTestUtil {
                                     @Nullable String name,
                                     @Nullable String type,
                                     @Nullable String value,
-                                    @Nullable Boolean hasChildren) throws InterruptedException {
+                                    @Nullable Boolean hasChildren) {
     assertVariable(findVar(vars, name), name, type, value, hasChildren);
   }
 
@@ -542,7 +523,7 @@ public class XDebuggerTestUtil {
                                     @Nullable String name,
                                     @Nullable String type,
                                     @Nullable String value,
-                                    @Nullable Boolean hasChildren) throws InterruptedException {
+                                    @Nullable Boolean hasChildren) {
     assertNull(varAndErrorMessage.second);
     assertVariable(varAndErrorMessage.first, name, type, value, hasChildren);
   }

@@ -49,7 +49,6 @@ import java.util.List;
 
 /**
  * @author Eugene Zhuravlev
- *         Date: Jul 16, 2007
  */
 abstract class ProjectLayoutPanel<T> extends JPanel {
 
@@ -459,9 +458,6 @@ abstract class ProjectLayoutPanel<T> extends JPanel {
           public Icon getIcon() {
             return getElementIcon(file);
           }
-          public Color getColor() {
-            return null;
-          }
         });
       }
       myChooser.selectElements(ContainerUtil.createMaybeSingletonList(ContainerUtil.getFirstItem(files)));
@@ -526,10 +522,6 @@ abstract class ProjectLayoutPanel<T> extends JPanel {
 
     public Icon getIcon() {
       return getElementIcon(myEntry);
-    }
-
-    public Color getColor() {
-      return null;
     }
   }
 }

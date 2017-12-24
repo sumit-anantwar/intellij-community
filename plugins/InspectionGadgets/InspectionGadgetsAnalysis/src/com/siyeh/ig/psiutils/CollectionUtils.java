@@ -17,6 +17,7 @@ package com.siyeh.ig.psiutils;
 
 import com.intellij.psi.*;
 import com.intellij.psi.util.InheritanceUtil;
+import com.intellij.psi.util.PsiUtil;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -152,15 +153,7 @@ public class CollectionUtils {
 
   @Contract("null -> false")
   public static boolean isConcreteCollectionClass(@Nullable PsiType type) {
-    if (!(type instanceof PsiClassType)) {
-      return false;
-    }
-    final PsiClassType classType = (PsiClassType)type;
-    final PsiClass resolved = classType.resolve();
-    if (resolved == null) {
-      return false;
-    }
-    return isConcreteCollectionClass(resolved);
+    return isConcreteCollectionClass(PsiUtil.resolveClassInClassTypeOnly(type));
   }
 
   @Contract("null -> false")
@@ -178,11 +171,7 @@ public class CollectionUtils {
   }
 
   public static boolean isCollectionClassOrInterface(@Nullable PsiType type) {
-    if (!(type instanceof PsiClassType)) {
-      return false;
-    }
-    final PsiClassType classType = (PsiClassType)type;
-    final PsiClass resolved = classType.resolve();
+    final PsiClass resolved = PsiUtil.resolveClassInClassTypeOnly(type);
     if (resolved == null) {
       return false;
     }
@@ -242,18 +231,6 @@ public class CollectionUtils {
       return initializers.length == 0;
     }
     return ConstructionUtils.isEmptyArrayInitializer(initializer);
-  }
-
-  public static boolean isArrayOrCollectionField(@NotNull PsiField field) {
-    final PsiType type = field.getType();
-    if (isCollectionClassOrInterface(type)) {
-      return true;
-    }
-    if (!(type instanceof PsiArrayType)) {
-      return false;
-    }
-    // constant empty arrays are ignored.
-    return !isConstantEmptyArray(field);
   }
 
   public static String getInterfaceForClass(String name) {

@@ -15,11 +15,13 @@
  */
 package com.intellij.testFramework.fixtures.impl;
 
+import com.intellij.concurrency.IdeaForkJoinWorkerThreadFactory;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.testFramework.EdtTestUtil;
 import com.intellij.testFramework.UsefulTestCase;
 import com.intellij.testFramework.fixtures.IdeaTestFixture;
+import org.jetbrains.annotations.NotNull;
 import org.junit.Assert;
 
 /**
@@ -29,6 +31,10 @@ public class BaseFixture implements IdeaTestFixture {
   private boolean myInitialized;
   private boolean myDisposed;
   private final Disposable myTestRootDisposable = Disposer.newDisposable();
+
+  static {
+    IdeaForkJoinWorkerThreadFactory.setupPoisonFactory();
+  }
 
   @Override
   public void setUp() throws Exception {
@@ -59,6 +65,7 @@ public class BaseFixture implements IdeaTestFixture {
     }
   }
 
+  @NotNull
   public final Disposable getTestRootDisposable() {
     return myTestRootDisposable;
   }

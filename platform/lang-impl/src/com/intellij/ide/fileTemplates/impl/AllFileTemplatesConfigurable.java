@@ -57,8 +57,6 @@ import java.util.List;
 
 /*
  * @author: MYakovlev
- * Date: Jul 26, 2002
- * Time: 12:44:56 PM
  */
 
 public class AllFileTemplatesConfigurable implements SearchableConfigurable, Configurable.NoMargin, Configurable.NoScroll,
@@ -264,6 +262,10 @@ public class AllFileTemplatesConfigurable implements SearchableConfigurable, Con
       @Override
       public void update(AnActionEvent e) {
         super.update(e);
+        if (myCurrentTab == null) {
+          e.getPresentation().setEnabled(false);
+          return;
+        }
         FileTemplate selectedItem = myCurrentTab.getSelectedTemplate();
         e.getPresentation().setEnabled(selectedItem != null && !isInternalTemplate(selectedItem.getName(), myCurrentTab.getTitle()));
       }

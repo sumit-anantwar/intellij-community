@@ -17,6 +17,7 @@ package com.intellij.java.codeInsight.intention;
 
 import com.intellij.JavaTestUtil;
 import com.intellij.codeInsight.intention.IntentionAction;
+import com.intellij.openapi.fileTypes.StdFileTypes;
 import com.intellij.psi.codeStyle.CodeStyleSettingsManager;
 import com.intellij.psi.codeStyle.JavaCodeStyleSettings;
 import com.intellij.testFramework.fixtures.JavaCodeInsightFixtureTestCase;
@@ -122,6 +123,12 @@ public class AddSingleStaticImportActionTest extends JavaCodeInsightFixtureTestC
     myFixture.checkResultByFile(getTestName(false) + "_after.java");
   }
 
+  public void testInvalidInput() {
+    myFixture.configureByText(StdFileTypes.JAVA, "class X {\n  Character.\n" +
+                                                 "            Sub<caret>set\n}");
+    myFixture.getAvailableIntentions();
+  }
+
   public void testSingleImportWhenConflictingWithOnDemand() {
     myFixture.addClass("package foo; class Foo {public static void foo(int i){}}");
     myFixture.addClass("package foo; class Bar {public static void foo(String s){}}");
@@ -146,6 +153,15 @@ public class AddSingleStaticImportActionTest extends JavaCodeInsightFixtureTestC
     myFixture.configureByFile(getTestName(false) + ".java");
     IntentionAction intention = myFixture.getAvailableIntention("Add static import for 'foo.Assert.assertTrue'");
     assertNull(intention);
+  }
+
+  public void testNonStaticInnerClassImport() {
+    myFixture.addClass("package foo; public class Foo {public class Bar {}}");
+    myFixture.configureByFile(getTestName(false) + ".java");
+    IntentionAction intention = myFixture.getAvailableIntention("Add import for 'foo.Foo.Bar'");
+    assertNotNull(intention);
+    myFixture.launchAction(intention);
+    myFixture.checkResultByFile(getTestName(false) + "_after.java");
   }
 
   public void testProhibitWhenMethodWithIdenticalSignatureAlreadyImportedFromAnotherClass() {

@@ -31,11 +31,12 @@ import com.intellij.psi.PsiNamedElement;
 import com.intellij.psi.PsiReference;
 import com.intellij.psi.search.PsiElementProcessor;
 import com.intellij.util.Consumer;
-import com.intellij.util.containers.HashMap;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.function.Function;
 
 public class GotoImplementationHandler extends GotoTargetHandler {
   @Override
@@ -139,7 +140,13 @@ public class GotoImplementationHandler extends GotoTargetHandler {
     private final PsiReference myReference;
 
     ImplementationsUpdaterTask(@NotNull GotoData gotoData, @NotNull Editor editor, int offset, final PsiReference reference) {
-      super(gotoData.source.getProject(), ImplementationSearcher.SEARCHING_FOR_IMPLEMENTATIONS, createComparator(new HashMap<>(), gotoData));
+      super(gotoData.source.getProject(), ImplementationSearcher.SEARCHING_FOR_IMPLEMENTATIONS,
+            createComparatorWrapper(Comparator.comparing(new Function<PsiElement, Comparable>() {
+                @Override
+                public Comparable apply(PsiElement e1) {
+                  return getRenderer(e1, gotoData).getComparingObject(e1);
+                }
+              })));
       myEditor = editor;
       myOffset = offset;
       myGotoData = gotoData;

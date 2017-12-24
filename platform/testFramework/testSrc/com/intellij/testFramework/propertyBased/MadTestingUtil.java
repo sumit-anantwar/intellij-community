@@ -30,7 +30,6 @@ import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx;
 import com.intellij.openapi.fileTypes.FileTypeManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -38,7 +37,6 @@ import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
 import com.intellij.profile.codeInspection.ProjectInspectionProfileManager;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.source.PostprocessReformattingAspect;
-import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.testFramework.RunAll;
 import com.intellij.testFramework.UsefulTestCase;
 import com.intellij.testFramework.fixtures.CodeInsightTestFixture;
@@ -212,6 +210,7 @@ public class MadTestingUtil {
       PsiDocumentManager.getInstance(fixture.getProject()).commitAllDocuments();
       PsiFile file = PsiManager.getInstance(fixture.getProject()).findFile(vFile);
       if (file instanceof PsiBinaryFile || file instanceof PsiPlainTextFile) {
+        System.err.println("Can't check " + vFile + " due to incorrect file type: " + file + " of " + file.getClass());
         // no operations, but the just created file needs to be deleted (in FileWithActions#runActions)
         // todo a side-effect-free generator
         return Generator.constant(new FileWithActions(file, Collections.emptyList()));
@@ -265,15 +264,7 @@ public class MadTestingUtil {
   }
 
   public static boolean isAfterError(PsiFile file, int offset) {
-    PsiElement leaf = file.findElementAt(offset);
-    Set<Integer> errorOffsets = SyntaxTraverser.psiTraverser(file)
-      .filter(PsiErrorElement.class)
-      .map(PsiTreeUtil::nextVisibleLeaf)
-      .filter(Condition.NOT_NULL)
-      .map(e -> e.getTextRange().getStartOffset())
-      .toSet();
-    return !errorOffsets.isEmpty() &&
-           SyntaxTraverser.psiApi().parents(leaf).find(e -> errorOffsets.contains(e.getTextRange().getStartOffset())) != null;
+    return SyntaxTraverser.psiTraverser(file).filter(PsiErrorElement.class).find(e -> e.getTextRange().getStartOffset() <= offset) != null;
   }
 
   private static class FileGenerator implements Function<DataStructure, File> {

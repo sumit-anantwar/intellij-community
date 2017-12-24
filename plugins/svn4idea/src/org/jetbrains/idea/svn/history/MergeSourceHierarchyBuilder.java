@@ -35,7 +35,8 @@ public class MergeSourceHierarchyBuilder implements ThrowableConsumer<Pair<LogEn
     myConsumer = consumer;
   }
 
-  public void consume(Pair<LogEntry, Integer> svnLogEntryIntegerPair) throws SVNException {
+  @Override
+  public void consume(Pair<LogEntry, Integer> svnLogEntryIntegerPair) {
     final LogEntry logEntry = svnLogEntryIntegerPair.getFirst();
     final Integer mergeLevel = svnLogEntryIntegerPair.getSecond();
 

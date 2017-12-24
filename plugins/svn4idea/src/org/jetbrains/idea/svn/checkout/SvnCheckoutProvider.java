@@ -15,13 +15,14 @@
  */
 package org.jetbrains.idea.svn.checkout;
 
-import com.intellij.lifecycle.PeriodicalTasksCloser;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
+import com.intellij.openapi.progress.util.BackgroundTaskUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.FileIndexFacade;
 import com.intellij.openapi.util.Ref;
@@ -50,8 +51,6 @@ import org.jetbrains.idea.svn.checkin.CommitEventHandler;
 import org.jetbrains.idea.svn.checkin.IdeaCommitHandler;
 import org.jetbrains.idea.svn.dialogs.CheckoutDialog;
 import org.jetbrains.idea.svn.dialogs.UpgradeFormatDialog;
-import org.tmatesoft.svn.core.SVNCancelException;
-import org.tmatesoft.svn.core.SVNException;
 import org.tmatesoft.svn.core.SVNURL;
 import org.tmatesoft.svn.core.wc.DefaultSVNCommitHandler;
 import org.tmatesoft.svn.core.wc.ISVNCommitHandler;
@@ -69,6 +68,7 @@ import static com.intellij.openapi.ui.Messages.showErrorDialog;
 import static com.intellij.openapi.vfs.VfsUtilCore.virtualToIoFile;
 import static com.intellij.util.containers.ContainerUtil.getFirstItem;
 import static org.jetbrains.idea.svn.SvnBundle.message;
+import static org.jetbrains.idea.svn.SvnUtil.parseUrl;
 import static org.jetbrains.idea.svn.WorkingCopyFormat.UNKNOWN;
 
 public class SvnCheckoutProvider implements CheckoutProvider {
@@ -79,8 +79,19 @@ public class SvnCheckoutProvider implements CheckoutProvider {
     dialog.show();
   }
 
+  @Deprecated // Required for compatibility with external plugins.
   public static void doCheckout(@NotNull Project project, @NotNull File target, final String url, final SVNRevision revision,
                                 final Depth depth, final boolean ignoreExternals, @Nullable final Listener listener) {
+    doCheckout(project, target, parseUrl(url), revision, depth, ignoreExternals, listener);
+  }
+
+  public static void doCheckout(@NotNull Project project,
+                                @NotNull File target,
+                                @NotNull SVNURL url,
+                                SVNRevision revision,
+                                Depth depth,
+                                boolean ignoreExternals,
+                                @Nullable Listener listener) {
     if (!target.exists()) {
       target.mkdirs();
     }
@@ -102,6 +113,8 @@ public class SvnCheckoutProvider implements CheckoutProvider {
     return settingsFactoryFormats.contains(format) || !otherFactoryFormats.contains(format) ? settingsFactory : otherFactory;
   }
 
+
+  @Deprecated // Required for compatibility with external plugins.
   public static void checkout(final Project project,
                               final File target,
                               final String url,
@@ -109,6 +122,17 @@ public class SvnCheckoutProvider implements CheckoutProvider {
                               final Depth depth,
                               final boolean ignoreExternals,
                               final Listener listener, final WorkingCopyFormat selectedFormat) {
+    checkout(project, target, parseUrl(url), revision, depth, ignoreExternals, listener, selectedFormat);
+  }
+
+  public static void checkout(Project project,
+                              File target,
+                              @NotNull SVNURL url,
+                              SVNRevision revision,
+                              Depth depth,
+                              boolean ignoreExternals,
+                              Listener listener,
+                              WorkingCopyFormat selectedFormat) {
     final Ref<Boolean> checkoutSuccessful = new Ref<>();
     final Exception[] exception = new Exception[1];
     final Task.Backgroundable checkoutBackgroundTask = new Task.Backgroundable(project,
@@ -124,13 +148,11 @@ public class SvnCheckoutProvider implements CheckoutProvider {
         ProgressManager.progress(message("progress.text.checking.out", target.getAbsolutePath()));
         try {
           getFactory(vcs, format).createCheckoutClient()
-            .checkout(SvnTarget.fromURL(SVNURL.parseURIEncoded(url)), target, revision, depth, ignoreExternals, true, format, handler);
+            .checkout(SvnTarget.fromURL(url), target, revision, depth, ignoreExternals, true, format, handler);
           ProgressManager.checkCanceled();
           checkoutSuccessful.set(Boolean.TRUE);
         }
-        catch (SVNCancelException ignore) {
-        }
-        catch (SVNException | VcsException e) {
+        catch (VcsException e) {
           exception[0] = e;
         }
         finally {
@@ -226,7 +248,7 @@ public class SvnCheckoutProvider implements CheckoutProvider {
     final String targetPath = FileUtil.toSystemIndependentName(target.getAbsolutePath());
 
     ExclusiveBackgroundVcsAction.run(project, () -> ProgressManager.getInstance().runProcessWithProgressSynchronously(() -> {
-      final FileIndexFacade facade = PeriodicalTasksCloser.getInstance().safeGetService(project, FileIndexFacade.class);
+      final FileIndexFacade facade = ServiceManager.getService(project, FileIndexFacade.class);
       ProgressIndicator progressIndicator = ProgressManager.getInstance().getProgressIndicator();
       try {
         progressIndicator.setText(message("progress.text.import", target.getAbsolutePath()));
@@ -268,7 +290,7 @@ public class SvnCheckoutProvider implements CheckoutProvider {
       myFilter = filter;
     }
 
-    public boolean accept(final File file) throws SVNException {
+    public boolean accept(final File file) {
       final VirtualFile vf = myLfs.findFileByIoFile(file);
       return vf != null && myFilter.accept(vf);
     }
@@ -302,7 +324,7 @@ public class SvnCheckoutProvider implements CheckoutProvider {
 
       final WorkingCopyFormat result = displayUpgradeDialog();
 
-      getApplication().getMessageBus().syncPublisher(SvnVcs.WC_CONVERTED).run();
+      BackgroundTaskUtil.syncPublisher(SvnVcs.WC_CONVERTED).run();
 
       return result;
     }

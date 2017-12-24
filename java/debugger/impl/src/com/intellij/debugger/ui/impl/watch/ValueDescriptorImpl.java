@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.debugger.ui.impl.watch;
 
 import com.intellij.Patches;
@@ -25,6 +11,7 @@ import com.intellij.debugger.impl.DebuggerContextImpl;
 import com.intellij.debugger.impl.DebuggerUtilsEx;
 import com.intellij.debugger.jdi.VirtualMachineProxyImpl;
 import com.intellij.debugger.settings.NodeRendererSettings;
+import com.intellij.debugger.ui.overhead.OverheadTimings;
 import com.intellij.debugger.ui.tree.DebuggerTreeNode;
 import com.intellij.debugger.ui.tree.NodeDescriptor;
 import com.intellij.debugger.ui.tree.NodeDescriptorNameAdjuster;
@@ -220,7 +207,8 @@ public abstract class ValueDescriptorImpl extends NodeDescriptorImpl implements 
     catch (EvaluateException e) {
       myValueException = e;
       setFailed(e);
-      myValue = getTargetExceptionWithStackTraceFilled(evaluationContext, e);
+      myValue = getTargetExceptionWithStackTraceFilled(evaluationContext, e,
+                                                       isPrintExceptionToConsole() || ApplicationManager.getApplication().isUnitTestMode());
       myIsExpandable = false;
     }
     finally {
@@ -230,24 +218,36 @@ public abstract class ValueDescriptorImpl extends NodeDescriptorImpl implements 
     myIsNew = false;
   }
 
+  protected boolean isPrintExceptionToConsole() {
+    return true;
+  }
+
   @Nullable
-  private static ObjectReference getTargetExceptionWithStackTraceFilled(final EvaluationContextImpl evaluationContext, EvaluateException ex){
+  protected static Value invokeExceptionGetStackTrace(ObjectReference exceptionObj, EvaluationContextImpl evaluationContext)
+    throws EvaluateException {
+    Method method = ((ClassType)exceptionObj.referenceType()).concreteMethodByName("getStackTrace", "()[Ljava/lang/StackTraceElement;");
+    if (method != null) {
+      return evaluationContext.getDebugProcess().invokeMethod(evaluationContext, exceptionObj, method, Collections.emptyList());
+    }
+    return null;
+  }
+
+  @Nullable
+  private static ObjectReference getTargetExceptionWithStackTraceFilled(@Nullable EvaluationContextImpl evaluationContext,
+                                                                        EvaluateException ex,
+                                                                        boolean printToConsole) {
     final ObjectReference exceptionObj = ex.getExceptionFromTargetVM();
     if (exceptionObj != null && evaluationContext != null) {
       try {
-        ClassType refType = (ClassType)exceptionObj.referenceType();
-        Method method = refType.concreteMethodByName("getStackTrace", "()[Ljava/lang/StackTraceElement;");
-        if (method != null) {
-          final DebugProcessImpl process = evaluationContext.getDebugProcess();
-          Value trace = process.invokeMethod(evaluationContext, exceptionObj, method, Collections.emptyList());
+        Value trace = invokeExceptionGetStackTrace(exceptionObj, evaluationContext);
 
-          // print to console as well
-          if (trace instanceof ArrayReference) {
-            ArrayReference traceArray = (ArrayReference)trace;
-            process.printToConsole(DebuggerUtils.getValueAsString(evaluationContext, exceptionObj) + "\n");
-            for (Value stackElement : traceArray.getValues()) {
-              process.printToConsole("\tat " + DebuggerUtils.getValueAsString(evaluationContext, stackElement) + "\n");
-            }
+        // print to console as well
+        if (printToConsole && trace instanceof ArrayReference) {
+          DebugProcessImpl process = evaluationContext.getDebugProcess();
+          ArrayReference traceArray = (ArrayReference)trace;
+          process.printToConsole(DebuggerUtils.getValueAsString(evaluationContext, exceptionObj) + "\n");
+          for (Value stackElement : traceArray.getValues()) {
+            process.printToConsole("\tat " + DebuggerUtils.getValueAsString(evaluationContext, stackElement) + "\n");
           }
         }
       }
@@ -298,11 +298,17 @@ public abstract class ValueDescriptorImpl extends NodeDescriptorImpl implements 
 
     String label;
     if (valueException == null) {
+      long start = renderer instanceof NodeRendererImpl && ((NodeRendererImpl)renderer).hasOverhead() ? System.currentTimeMillis() : 0;
       try {
         label = renderer.calcLabel(this, context, labelListener);
       }
       catch (EvaluateException e) {
         label = setValueLabelFailed(e);
+      }
+      finally {
+        if (start > 0) {
+          OverheadTimings.add(debugProcess, new NodeRendererImpl.Overhead((NodeRendererImpl)renderer), 1, System.currentTimeMillis() - start);
+        }
       }
     }
     else {

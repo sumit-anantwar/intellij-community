@@ -25,6 +25,7 @@ import com.intellij.openapi.actionSystem.LangDataKeys;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.psi.*;
 import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.rt.execution.junit.RepeatCount;
 import com.intellij.testFramework.MapDataContext;
 import com.intellij.testFramework.PlatformTestUtil;
 import com.intellij.testFramework.TestDataProvider;
@@ -125,6 +126,22 @@ public class JUnit5IntegrationTest extends JUnitAbstractCompilingIntegrationTest
     assertTrue(systemOutput.contains("-junit5"));
   }
 
+  public void testRunClassRepeatedTwice() throws Exception {
+    PsiClass aClass = JavaPsiFacade.getInstance(myProject).findClass("mixed.v5.MyTest5", GlobalSearchScope.projectScope(myProject));
+    RunConfiguration configuration = createConfiguration(aClass);
+    ((JUnitConfiguration)configuration).setRepeatMode(RepeatCount.N);
+    ((JUnitConfiguration)configuration).setRepeatCount(2);
+    
+
+    ProcessOutput processOutput = doStartTestsProcess(configuration);
+    String systemOutput = processOutput.sys.toString(); //command line
+
+    assertEmpty(processOutput.out);
+    assertEmpty(processOutput.err);
+    assertSize(2, processOutput.messages.stream().filter(TestFailed.class::isInstance).collect(Collectors.toList()));
+    assertTrue(systemOutput.contains("-junit5"));
+  }
+
   public void testIgnoreDisabledTestClass() throws Exception {
     RunConfiguration configuration = createRunPackageConfiguration("disabled");
     ProcessOutput processOutput = doStartTestsProcess(configuration);
@@ -209,7 +226,7 @@ public class JUnit5IntegrationTest extends JUnitAbstractCompilingIntegrationTest
   @Override
   protected JpsMavenRepositoryLibraryDescriptor[] getRequiredLibs() {
     return new JpsMavenRepositoryLibraryDescriptor[] {
-      new JpsMavenRepositoryLibraryDescriptor("org.junit.jupiter", "junit-jupiter-api", "5.0.0-RC2"),
+      new JpsMavenRepositoryLibraryDescriptor("org.junit.jupiter", "junit-jupiter-api", "5.0.0"),
       new JpsMavenRepositoryLibraryDescriptor("junit", "junit", "4.12")
     };
   }

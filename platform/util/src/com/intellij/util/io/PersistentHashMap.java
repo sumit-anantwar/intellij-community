@@ -36,7 +36,6 @@ import java.util.List;
 
 /**
  * @author Eugene Zhuravlev
- *         Date: Dec 18, 2007
  */
 public class PersistentHashMap<Key, Value> extends PersistentEnumeratorDelegate<Key> implements PersistentMap<Key, Value> {
   // PersistentHashMap (PHM) works in following (generic) way:
@@ -462,6 +461,7 @@ public class PersistentHashMap<Key, Value> extends PersistentEnumeratorDelegate<
     AppendStream appenderStream = ourFlyweightAppenderStream.getValue();
     BufferExposingByteArrayOutputStream stream = myAppendCache.get(key);
     appenderStream.setOut(stream);
+    myValueStorage.checkAppendsAllowed(stream.size());
     appender.append(appenderStream);
     appenderStream.setOut(null);
   }
@@ -764,7 +764,8 @@ public class PersistentHashMap<Key, Value> extends PersistentEnumeratorDelegate<
       final File[] oldFiles = getFilesInDirectoryWithNameStartingWith(oldDataFile, oldDataFileBaseName);
 
       final String newPath = getDataFile(myEnumerator.myFile).getPath() + ".new";
-      final PersistentHashMapValueStorage newStorage = PersistentHashMapValueStorage.create(newPath, myIsReadOnly);
+      PersistentHashMapValueStorage.CreationTimeOptions options = myValueStorage.getOptions();
+      final PersistentHashMapValueStorage newStorage = PersistentHashMapValueStorage.create(newPath, options);
       myValueStorage.switchToCompactionMode();
       myEnumerator.markDirty(true);
       long sizeBefore = myValueStorage.getSize();
@@ -819,7 +820,7 @@ public class PersistentHashMap<Key, Value> extends PersistentEnumeratorDelegate<
         }
       }
 
-      myValueStorage = PersistentHashMapValueStorage.create(oldDataFile.getPath(), myIsReadOnly);
+      myValueStorage = PersistentHashMapValueStorage.create(oldDataFile.getPath(), options);
       LOG.info("Compacted " + myEnumerator.myFile.getPath() + ":" + sizeBefore + " bytes into " + newSize + " bytes in " + (System.currentTimeMillis() - now) + "ms.");
       myEnumerator.putMetaData(myLiveAndGarbageKeysCounter);
       myEnumerator.putMetaData2( myLargeIndexWatermarkId );

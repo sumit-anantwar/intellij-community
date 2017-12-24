@@ -15,6 +15,7 @@
  */
 package com.intellij.ide;
 
+import com.intellij.ide.actions.MaximizeActiveDialogAction;
 import com.intellij.ide.dnd.DnDManager;
 import com.intellij.ide.dnd.DnDManagerImpl;
 import com.intellij.ide.plugins.PluginManager;
@@ -39,6 +40,7 @@ import com.intellij.openapi.wm.ex.WindowManagerEx;
 import com.intellij.openapi.wm.impl.FocusManagerImpl;
 import com.intellij.util.Alarm;
 import com.intellij.util.ReflectionUtil;
+import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.HashMap;
 import com.intellij.util.io.storage.HeavyProcessLatch;
@@ -156,6 +158,9 @@ public class IdeEventQueue extends EventQueue {
     });
 
     addDispatcher(new WindowsAltSuppressor(), null);
+    if (Registry.is("keymap.windows.up.to.maximize.dialogs") && SystemInfo.isWin7OrNewer) {
+      addDispatcher(new WindowsUpMaximizer(), null);
+    }
     addDispatcher(new EditingCanceller(), null);
 
     abracadabraDaberBoreh();
@@ -351,8 +356,9 @@ public class IdeEventQueue extends EventQueue {
     }
 
     e = mapEvent(e);
-    if (Registry.is("keymap.windows.as.meta")) {
-      e = mapMetaState(e);
+    AWTEvent metaEvent = mapMetaState(e);
+    if (Registry.is("keymap.windows.as.meta") && metaEvent != null) {
+      e = metaEvent;
     }
 
     boolean wasInputEvent = myIsInInputEvent;
@@ -483,7 +489,15 @@ public class IdeEventQueue extends EventQueue {
     return e;
   }
 
-  @NotNull
+  /**
+   * Here we try to use 'Windows' key like modifier, so we patch events with modifier 'Meta'
+   * when 'Windows' key was pressed and still is not released.
+   * @param e event to be patched
+   * @return new 'patched' event if need, otherwise null
+   *
+   * Note: As side-effect this method tracks special flag for 'Windows' key state that is valuable on itself
+   */
+  @Nullable
   private AWTEvent mapMetaState(@NotNull AWTEvent e) {
     if (myWinMetaPressed) {
       Application app = ApplicationManager.getApplication();
@@ -492,7 +506,7 @@ public class IdeEventQueue extends EventQueue {
       weAreNotActive |= e instanceof FocusEvent && ((FocusEvent)e).getOppositeComponent() == null;
       if (weAreNotActive) {
         myWinMetaPressed = false;
-        return e;
+        return null;
       }
     }
 
@@ -501,8 +515,7 @@ public class IdeEventQueue extends EventQueue {
       if (ke.getKeyCode() == KeyEvent.VK_WINDOWS) {
         if (ke.getID() == KeyEvent.KEY_PRESSED) myWinMetaPressed = true;
         if (ke.getID() == KeyEvent.KEY_RELEASED) myWinMetaPressed = false;
-        return new KeyEvent(ke.getComponent(), ke.getID(), ke.getWhen(), ke.getModifiers() | ke.getModifiersEx(), KeyEvent.VK_META, ke.getKeyChar(),
-                            ke.getKeyLocation());
+        return null;
       }
       if (myWinMetaPressed) {
         return new KeyEvent(ke.getComponent(), ke.getID(), ke.getWhen(), ke.getModifiers() | ke.getModifiersEx() | InputEvent.META_MASK, ke.getKeyCode(),
@@ -516,7 +529,7 @@ public class IdeEventQueue extends EventQueue {
                             me.getClickCount(), me.isPopupTrigger(), me.getButton());
     }
 
-    return e;
+    return null;
   }
 
   public void _dispatchEvent(@NotNull AWTEvent e, boolean typeAheadFlushing) {
@@ -1110,6 +1123,32 @@ public class IdeEventQueue extends EventQueue {
       return !dispatch;
     }
   }
+  //Windows OS doesn't support a Windows+Up/Down shortcut for dialogs, so we provide a workaround
+  private class WindowsUpMaximizer implements EventDispatcher {
+    @SuppressWarnings("SSBasedInspection")
+    @Override
+    public boolean dispatch(@NotNull AWTEvent e) {
+      if (myWinMetaPressed
+          && e instanceof KeyEvent
+          && e.getID() == KeyEvent.KEY_RELEASED
+          && (((KeyEvent)e).getKeyCode() == KeyEvent.VK_UP || ((KeyEvent)e).getKeyCode() == KeyEvent.VK_DOWN)) {
+        Component parent = UIUtil.getWindow(((KeyEvent)e).getComponent());
+        if (parent instanceof JDialog) {
+          final JDialog dialog = (JDialog)parent;
+          SwingUtilities.invokeLater(() -> {
+            if (((KeyEvent)e).getKeyCode() == KeyEvent.VK_UP) {
+              MaximizeActiveDialogAction.maximize(dialog);
+            }
+            else {
+              MaximizeActiveDialogAction.normalize(dialog);
+            }
+          });
+          return true;
+        }
+      }
+      return false;
+    }
+  }
 
   //We have to stop editing with <ESC> (if any) and consume the event to prevent any further processing (dialog closing etc.)
   private static class EditingCanceller implements EventDispatcher {
@@ -1153,7 +1192,12 @@ public class IdeEventQueue extends EventQueue {
       if (listener.consumePostedEvent(event)) return false;
     }
 
-    myFrequentEventDetector.eventHappened(event);
+    String message = myFrequentEventDetector.getMessageOnEvent(event);
+    if (message != null) {
+      // we can't log right here, because logging has locks inside, and postEvents can deadlock if it's blocked by anything (IDEA-161322)
+      AppExecutorUtil.getAppExecutorService().submit(() -> myFrequentEventDetector.logMessage(message));
+    }
+
     if (isKeyboardEvent(event)) {
       myKeyboardEventsPosted.incrementAndGet();
     }

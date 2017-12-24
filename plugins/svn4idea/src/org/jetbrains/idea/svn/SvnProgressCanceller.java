@@ -43,6 +43,7 @@ public class SvnProgressCanceller implements ProgressTracker {
     }
   }
 
-  public void consume(final ProgressEvent event) throws SVNException {
+  @Override
+  public void consume(final ProgressEvent event) {
   }
 }

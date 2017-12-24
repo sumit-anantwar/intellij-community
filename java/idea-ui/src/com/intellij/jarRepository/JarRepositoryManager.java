@@ -33,7 +33,6 @@ import com.intellij.openapi.roots.OrderRootType;
 import com.intellij.openapi.roots.libraries.NewLibraryConfiguration;
 import com.intellij.openapi.roots.libraries.ui.OrderRoot;
 import com.intellij.openapi.roots.ui.configuration.libraryEditor.LibraryEditor;
-import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Pair;
@@ -90,18 +89,18 @@ public class JarRepositoryManager {
   @Nullable
   public static NewLibraryConfiguration chooseLibraryAndDownload(final @NotNull Project project, final @Nullable String initialFilter, JComponent parentComponent) {
     RepositoryAttachDialog dialog = new RepositoryAttachDialog(project, initialFilter, RepositoryAttachDialog.Mode.DOWNLOAD);
-    dialog.show();
-    if (dialog.getExitCode() != DialogWrapper.OK_EXIT_CODE) {
+    if (!dialog.showAndGet()) {
       return null;
     }
 
     final String coord = dialog.getCoordinateText();
     final boolean attachSources = dialog.getAttachSources();
     final boolean attachJavaDoc = dialog.getAttachJavaDoc();
+    boolean includeTransitiveDependencies = dialog.getIncludeTransitiveDependencies();
     final String copyTo = dialog.getDirectoryPath();
 
     final NewLibraryConfiguration config = resolveAndDownload(
-      project, coord, attachSources, attachJavaDoc, copyTo, RemoteRepositoriesConfiguration.getInstance(project).getRepositories()
+      project, coord, attachSources, attachJavaDoc, includeTransitiveDependencies, copyTo, RemoteRepositoriesConfiguration.getInstance(project).getRepositories()
     );
     if (config == null) {
       Messages.showErrorDialog(parentComponent, "No files were downloaded for " + coord, CommonBundle.getErrorTitle());
@@ -114,9 +113,10 @@ public class JarRepositoryManager {
                                                             String coord,
                                                             boolean attachSources,
                                                             boolean attachJavaDoc,
+                                                            boolean includeTransitiveDependencies,
                                                             String copyTo,
                                                             Collection<RemoteRepositoryDescription> repositories) {
-    RepositoryLibraryProperties props = new RepositoryLibraryProperties(coord);
+    RepositoryLibraryProperties props = new RepositoryLibraryProperties(coord, includeTransitiveDependencies);
     final Collection<OrderRoot> roots = loadDependenciesModal(
       project, props, attachSources, attachJavaDoc, copyTo, repositories
     );
@@ -188,7 +188,7 @@ public class JarRepositoryManager {
                                                             boolean loadJavadoc,
                                                             @Nullable String copyTo,
                                                             @Nullable Collection<RemoteRepositoryDescription> repositories, boolean modal) {
-    final JpsMavenRepositoryLibraryDescriptor libDescriptor = new JpsMavenRepositoryLibraryDescriptor(libraryProps.getGroupId(), libraryProps.getArtifactId(), libraryProps.getVersion());
+    final JpsMavenRepositoryLibraryDescriptor libDescriptor = libraryProps.getRepositoryLibraryDescriptor();
     if (libDescriptor.getMavenId() != null) {
       if (repositories == null || repositories.isEmpty()) {
         repositories = RemoteRepositoriesConfiguration.getInstance(project).getRepositories();
@@ -235,7 +235,7 @@ public class JarRepositoryManager {
     }
     loadDependenciesAsync(
       project,
-      new JpsMavenRepositoryLibraryDescriptor(libraryProps.getGroupId(), libraryProps.getArtifactId(), libraryProps.getVersion()),
+      libraryProps.getRepositoryLibraryDescriptor(),
       kinds, repos, copyTo, resultProcessor
     );
   }
@@ -292,7 +292,7 @@ public class JarRepositoryManager {
       template = new RepositoryArtifactDescription(null, null, null, "jar", null, coord, null);
     }
     else {
-      template = new RepositoryArtifactDescription(new RepositoryLibraryProperties(coord), "jar", null);
+      template = new RepositoryArtifactDescription(new RepositoryLibraryProperties(coord, true), "jar", null);
     }
     ProgressManager.getInstance().run(new Task.Backgroundable(project, "Maven", false) {
 
@@ -539,7 +539,8 @@ public class JarRepositoryManager {
     protected Collection<Artifact> perform(ProgressIndicator progress, ArtifactRepositoryManager manager) throws Exception {
       final String version = myDesc.getVersion();
       try {
-        return manager.resolveDependencyAsArtifact(myDesc.getGroupId(), myDesc.getArtifactId(), version, myKinds);
+        return manager.resolveDependencyAsArtifact(myDesc.getGroupId(), myDesc.getArtifactId(), version, myKinds,
+                                                   myDesc.isIncludeTransitiveDependencies());
       }
       catch (TransferCancelledException e) {
         throw new ProcessCanceledException(e);
@@ -553,7 +554,8 @@ public class JarRepositoryManager {
           throw e;
         }
         try {
-          return manager.resolveDependencyAsArtifact(myDesc.getGroupId(), myDesc.getArtifactId(), resolvedVersion, myKinds);
+          return manager.resolveDependencyAsArtifact(myDesc.getGroupId(), myDesc.getArtifactId(), resolvedVersion, myKinds,
+                                                     myDesc.isIncludeTransitiveDependencies());
         }
         catch (TransferCancelledException e1) {
           throw new ProcessCanceledException(e1);

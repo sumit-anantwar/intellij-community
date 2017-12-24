@@ -90,6 +90,9 @@ public class RepositoryAttachDialog extends DialogWrapper {
   private JBCheckBox myDownloadToCheckBox;
   private JBLabel myCaptionLabel;
   private JPanel myDownloadOptionsPanel;
+  private JBCheckBox myIncludeTransitiveDepsCheckBox;
+  private JPanel mySearchOptionsPanel;
+  private JBCheckBox myIncludeTransitiveDependenciesForSearchCheckBox;
 
   private final JComboBox myCombobox;
 
@@ -180,8 +183,8 @@ public class RepositoryAttachDialog extends DialogWrapper {
                                              ProjectBundle.message("file.chooser.directory.for.downloaded.libraries.description"), null,
                                              descriptor);
     updateInfoLabel();
-    setOKActionEnabled(false);
     myDownloadOptionsPanel.setVisible(mode == Mode.DOWNLOAD);
+    mySearchOptionsPanel.setVisible(mode == Mode.SEARCH);
     init();
   }
 
@@ -215,6 +218,10 @@ public class RepositoryAttachDialog extends DialogWrapper {
 
   public boolean getAttachSources() {
     return mySourcesCheckBox.isSelected();
+  }
+
+  public boolean getIncludeTransitiveDependencies() {
+    return myMode == Mode.DOWNLOAD ? myIncludeTransitiveDepsCheckBox.isSelected() : myIncludeTransitiveDependenciesForSearchCheckBox.isSelected();
   }
 
   @Nullable
@@ -320,17 +327,21 @@ public class RepositoryAttachDialog extends DialogWrapper {
     }
     myProgressIcon.resume();
     JarRepositoryManager.searchArtifacts(myProject, text, (pairs) -> {
-      if (myProgressIcon.isDisposed()) {
-        return;
+      try {
+        if (myProgressIcon.isDisposed()) {
+          return;
+        }
+        myProgressIcon.suspend(); // finished
+        final int prevSize = myCoordinates.size();
+        for (Pair<RepositoryArtifactDescription, RemoteRepositoryDescription> pair : pairs) {
+          final RepositoryArtifactDescription artifact = pair.first;
+          myCoordinates.put(artifact.getGroupId() + ":" + artifact.getArtifactId() + ":" + artifact.getVersion(), artifact);
+        }
+        updateComboboxSelection(prevSize != myCoordinates.size());
       }
-      myProgressIcon.suspend(); // finished
-      final int prevSize = myCoordinates.size();
-      for (Pair<RepositoryArtifactDescription, RemoteRepositoryDescription> pair : pairs) {
-        final RepositoryArtifactDescription artifact = pair.first;
-        myCoordinates.put(artifact.getGroupId() + ":" + artifact.getArtifactId() + ":" + artifact.getVersion(), artifact);
+      finally {
+        setOKActionEnabled(true);
       }
-      updateComboboxSelection(prevSize != myCoordinates.size());
-      setOKActionEnabled(true);
     });
     return true;
   }

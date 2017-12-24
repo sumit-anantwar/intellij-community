@@ -30,7 +30,6 @@ import java.io.IOException;
 
 /**
  * @author Eugene Zhuravlev
- *         Date: Dec 20, 2007
  */
 public class ChangeTrackingValueContainer<Value> extends UpdatableValueContainer<Value>{
   // there is no volatile as we modify under write lock and read under read lock
@@ -104,9 +103,9 @@ public class ChangeTrackingValueContainer<Value> extends UpdatableValueContainer
       final ValueContainerImpl<Value> newMerged;
 
       if (fromDisk instanceof ValueContainerImpl) {
-        newMerged = ((ValueContainerImpl<Value>)fromDisk).copy();
+        newMerged = ((ValueContainerImpl<Value>)fromDisk).clone();
       } else {
-        newMerged = ((ChangeTrackingValueContainer<Value>)fromDisk).getMergedData().copy();
+        newMerged = ((ChangeTrackingValueContainer<Value>)fromDisk).getMergedData().clone();
       }
 
       if ((myAdded != null || myInvalidated != null) &&

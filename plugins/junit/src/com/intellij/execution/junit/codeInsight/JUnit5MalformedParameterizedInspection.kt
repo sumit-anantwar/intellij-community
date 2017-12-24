@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.execution.junit.codeInsight
 
 import com.intellij.codeInsight.AnnotationUtil
@@ -22,7 +8,7 @@ import com.intellij.codeInsight.daemon.impl.quickfix.CreateMethodQuickFix
 import com.intellij.codeInsight.daemon.impl.quickfix.DeleteElementFix
 import com.intellij.codeInsight.daemon.quickFix.FileReferenceQuickFixProvider
 import com.intellij.codeInsight.intention.QuickFixFactory
-import com.intellij.codeInspection.BaseJavaBatchLocalInspectionTool
+import com.intellij.codeInspection.AbstractBaseJavaLocalInspectionTool
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement
 import com.intellij.codeInspection.ProblemHighlightType
 import com.intellij.codeInspection.ProblemsHolder
@@ -42,10 +28,14 @@ import com.intellij.psi.util.TypeConversionUtil
 import com.intellij.util.containers.ContainerUtil
 import com.siyeh.InspectionGadgetsBundle
 import com.siyeh.ig.junit.JUnitCommonClassNames
+import com.siyeh.ig.psiutils.TestUtils
 import org.jetbrains.annotations.Nls
 import java.util.*
 
-class JUnit5MalformedParameterizedInspection : BaseJavaBatchLocalInspectionTool() {
+class JUnit5MalformedParameterizedInspection : AbstractBaseJavaLocalInspectionTool() {
+  object Annotations {
+    val EXTENDS_WITH = listOf(JUnitCommonClassNames.ORG_JUNIT_JUPITER_API_EXTENSION_EXTEND_WITH)
+  }
 
   @Nls
   override fun getDisplayName(): String {
@@ -91,9 +81,13 @@ class JUnit5MalformedParameterizedInspection : BaseJavaBatchLocalInspectionTool(
                 checkFileSource(it)
                 noMultiArgsProvider = false
               }
-              JUnitCommonClassNames.ORG_JUNIT_JUPITER_PARAMS_PROVIDER_CSV_SOURCE,
-              JUnitCommonClassNames.ORG_JUNIT_JUPITER_PARAMS_PROVIDER_ARGUMENTS_SOURCE -> {
+              JUnitCommonClassNames.ORG_JUNIT_JUPITER_PARAMS_PROVIDER_CSV_SOURCE -> {
                 noMultiArgsProvider = false
+              }
+              JUnitCommonClassNames.ORG_JUNIT_JUPITER_PARAMS_PROVIDER_ARGUMENTS_SOURCE -> {
+                if (source == null) {
+                  noMultiArgsProvider = false
+                }
               }
             }
           }
@@ -161,14 +155,16 @@ class JUnit5MalformedParameterizedInspection : BaseJavaBatchLocalInspectionTool(
         processArrayInAnnotationParameter(annotationMemberValue, { attributeValue ->
           for (reference in attributeValue.references) {
             if (reference is MethodSourceReference) {
+              val containingClass = method.containingClass
               val resolve = reference.resolve()
               if (resolve !is PsiMethod) {
-                val containingClass = method.containingClass
                 var createFix : CreateMethodQuickFix? = null
-                if (containingClass != null && holder.isOnTheFly)
+                if (containingClass != null && holder.isOnTheFly) {
+                  val staticModifier = if (!TestUtils.testInstancePerClass(containingClass)) " static" else "";
                   createFix = CreateMethodQuickFix.createFix(containingClass,
-                                                             "static Object[][] " + reference.value + "()",
+                                                             "private$staticModifier Object[][] " + reference.value + "()",
                                                              "return new Object[][] {};")
+                }
                 holder.registerProblem(attributeValue,
                                        "Cannot resolve target method source: \'" + reference.value + "\'",
                                        createFix)
@@ -177,7 +173,8 @@ class JUnit5MalformedParameterizedInspection : BaseJavaBatchLocalInspectionTool(
                 val sourceProvider : PsiMethod = resolve
                 val providerName = sourceProvider.name
 
-                if (!sourceProvider.hasModifierProperty(PsiModifier.STATIC)) {
+                if (!sourceProvider.hasModifierProperty(PsiModifier.STATIC) &&
+                    containingClass != null && !TestUtils.testInstancePerClass(containingClass)) {
                   holder.registerProblem(attributeValue, "Method source \'$providerName\' must be static",
                                          ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
                                          QuickFixFactory.getInstance().createModifierListFix(sourceProvider, PsiModifier.STATIC, true, false))
@@ -234,7 +231,7 @@ class JUnit5MalformedParameterizedInspection : BaseJavaBatchLocalInspectionTool(
                 if (qualifiedName != null && qualifiedName.startsWith("java.time.")) return
               }
             }
-            if (AnnotationUtil.isAnnotated(parameters[0], JUnitCommonClassNames.ORG_JUNIT_JUPITER_PARAMS_CONVERTER_CONVERT_WITH, false)) return
+            if (AnnotationUtil.isAnnotated(parameters[0], JUnitCommonClassNames.ORG_JUNIT_JUPITER_PARAMS_CONVERTER_CONVERT_WITH, 0)) return
             holder.registerProblem(attributeValue,
                                    "No implicit conversion found to convert object of type " + componentType.presentableText + " to " + paramType.presentableText)
           }
@@ -251,28 +248,31 @@ class JUnit5MalformedParameterizedInspection : BaseJavaBatchLocalInspectionTool(
           return collectionItemType
         }
 
-        if (InheritanceUtil.isInheritor(returnType, CommonClassNames.JAVA_UTIL_STREAM_INT_STREAM)) return PsiType.INT;
-        if (InheritanceUtil.isInheritor(returnType, CommonClassNames.JAVA_UTIL_STREAM_LONG_STREAM)) return PsiType.LONG;
-        if (InheritanceUtil.isInheritor(returnType, CommonClassNames.JAVA_UTIL_STREAM_DOUBLE_STREAM)) return PsiType.DOUBLE;
+        if (InheritanceUtil.isInheritor(returnType, CommonClassNames.JAVA_UTIL_STREAM_INT_STREAM)) return PsiType.INT
+        if (InheritanceUtil.isInheritor(returnType, CommonClassNames.JAVA_UTIL_STREAM_LONG_STREAM)) return PsiType.LONG
+        if (InheritanceUtil.isInheritor(returnType, CommonClassNames.JAVA_UTIL_STREAM_DOUBLE_STREAM)) return PsiType.DOUBLE
 
-        val streamItemType = PsiUtil.substituteTypeParameter(returnType, CommonClassNames.JAVA_UTIL_STREAM_STREAM, 0, false)
+        val streamItemType = PsiUtil.substituteTypeParameter(returnType, CommonClassNames.JAVA_UTIL_STREAM_STREAM, 0, true)
         if (streamItemType != null) {
           return streamItemType
         }
 
-        return PsiUtil.substituteTypeParameter(returnType, CommonClassNames.JAVA_UTIL_ITERATOR, 0, false)
+        return PsiUtil.substituteTypeParameter(returnType, CommonClassNames.JAVA_UTIL_ITERATOR, 0, true)
       }
     }
   }
 
   private fun hasMultipleParameters(method: PsiMethod): Boolean {
-    return method.parameterList.parameters
+    val containingClass = method.containingClass
+    return containingClass != null &&
+             method.parameterList.parameters
              .filter { it ->
                !InheritanceUtil.isInheritor(it.type, JUnitCommonClassNames.ORG_JUNIT_JUPITER_API_TEST_INFO) &&
                !InheritanceUtil.isInheritor(it.type, JUnitCommonClassNames.ORG_JUNIT_JUPITER_API_TEST_REPORTER)
              }
-             .count() > 1 && !AnnotationUtil.isAnnotated(method, Collections.singleton(
-      JUnitCommonClassNames.ORG_JUNIT_JUPITER_API_EXTENSION_EXTEND_WITH))
+             .count() > 1
+           && !MetaAnnotationUtil.isMetaAnnotated(method, Annotations.EXTENDS_WITH)
+           && !MetaAnnotationUtil.isMetaAnnotatedInHierarchy(containingClass, Annotations.EXTENDS_WITH)
   }
 }
 

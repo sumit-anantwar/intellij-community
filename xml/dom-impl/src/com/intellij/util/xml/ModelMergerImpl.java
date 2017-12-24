@@ -232,7 +232,7 @@ public class ModelMergerImpl implements ModelMerger {
 
 
   private <T> T _mergeModels(final Class<? super T> aClass, final MergingInvocationHandler<T> handler, final T... implementations) {
-    final Set<Class> commonClasses = getCommonClasses(new THashSet<>(), implementations);
+    final Set<Class> commonClasses = getCommonClasses(new THashSet<>(), (Object[])implementations);
     commonClasses.add(MERGED_OBJECT_CLASS);
     commonClasses.add(aClass);
     final T t = AdvancedProxy.createProxy(handler, null, commonClasses.toArray(new Class[commonClasses.size()]));
@@ -352,12 +352,11 @@ public class ModelMergerImpl implements ModelMerger {
 
     if (returnType.isInterface()) {
       final List<Object> orderedPrimaryKeys = new SmartList<>();
-      final Map<Object, List<Set<Object>>> map = FactoryMap.createMap(key-> {
-          orderedPrimaryKeys.add(key);
-          return new SmartList<>();
-        }
-      );
-      final Map<Object, int[]> counts = FactoryMap.createMap(key -> new int[implementations.size()]);
+      final Map<Object, List<Set<Object>>> map = FactoryMap.create(key -> {
+        orderedPrimaryKeys.add(key);
+        return new SmartList<>();
+      });
+      final Map<Object, int[]> counts = FactoryMap.create(key -> new int[implementations.size()]);
       for (int i = 0; i < implementations.size(); i++) {
         Object t = implementations.get(i);
         final Object o = method.invoke(t, args);

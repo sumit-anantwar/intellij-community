@@ -251,7 +251,10 @@ public class TrafficLightRenderer implements ErrorStripeRenderer, Disposable {
     //noinspection ForLoopReplaceableByForEach
     for (int i = 0; i < passes.size(); i++) {
       TextEditorHighlightingPass tepass = passes.get(i);
-      if (!(tepass instanceof ProgressableTextEditorHighlightingPass)) continue;
+      if (!(tepass instanceof ProgressableTextEditorHighlightingPass) ||
+          StringUtil.isEmpty(((ProgressableTextEditorHighlightingPass)tepass).getPresentableName())) {
+        continue;
+      }
       ProgressableTextEditorHighlightingPass pass = (ProgressableTextEditorHighlightingPass)tepass;
 
       if (pass.getProgress() < 0) continue;
@@ -391,7 +394,7 @@ public class TrafficLightRenderer implements ErrorStripeRenderer, Disposable {
     for (ProgressableTextEditorHighlightingPass pass : status.passStati) {
       JProgressBar progressBar = new JProgressBar(0, MAX);
       progressBar.setMaximum(MAX);
-      progressBar.putClientProperty("JComponent.sizeVariant", "mini");
+      UIUtil.applyStyle(UIUtil.ComponentStyle.MINI, progressBar);
       JLabel percLabel = new JLabel();
       percLabel.setText(TrafficProgressPanel.MAX_TEXT);
       passes.put(pass, Pair.create(progressBar, percLabel));

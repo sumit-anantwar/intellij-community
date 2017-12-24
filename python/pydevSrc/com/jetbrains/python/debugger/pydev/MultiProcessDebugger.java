@@ -7,6 +7,8 @@ import com.google.common.collect.Sets;
 import com.intellij.execution.ExecutionException;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.util.Pair;
+import com.intellij.xdebugger.XSourcePosition;
 import com.intellij.xdebugger.breakpoints.SuspendPolicy;
 import com.intellij.xdebugger.frame.XValueChildrenList;
 import com.jetbrains.python.console.pydev.PydevCompletionVariant;
@@ -223,6 +225,13 @@ public class MultiProcessDebugger implements ProcessDebugger {
   }
 
   @Override
+  public void loadFullVariableValues(@NotNull String threadId,
+                                     @NotNull String frameId,
+                                     @NotNull List<PyFrameAccessor.PyAsyncValue<String>> vars) throws PyDebuggerException {
+    debugger(threadId).loadFullVariableValues(threadId, frameId, vars);
+  }
+
+  @Override
   public String loadSource(String path) {
     return myMainDebugger.loadSource(path);
   }
@@ -357,6 +366,14 @@ public class MultiProcessDebugger implements ProcessDebugger {
   @Override
   public void resumeOrStep(String threadId, ResumeOrStepCommand.Mode mode) {
     debugger(threadId).resumeOrStep(threadId, mode);
+  }
+
+  @Override
+  public void setNextStatement(@NotNull String threadId,
+                               @NotNull XSourcePosition sourcePosition,
+                               @Nullable String functionName,
+                               @NotNull PyDebugCallback<Pair<Boolean, String>> callback) {
+    debugger(threadId).setNextStatement(threadId, sourcePosition, functionName, callback);
   }
 
   @Override

@@ -161,6 +161,7 @@ public class FindDialog extends DialogWrapper implements FindUI {
 
   @Override
   public void doCancelAction() { // doCancel disposes fields and then calls dispose
+    FindSettings.getInstance().setDefaultScopeName(myScopeCombo.getSelectedScopeName());
     applyTo(FindManager.getInstance(myProject).getFindInProjectModel(), false);
     rememberResultsPreviewWasOpen();
     super.doCancelAction();
@@ -655,13 +656,10 @@ public class FindDialog extends DialogWrapper implements FindUI {
       pane.insertTab("Options", null, optionsPanel, null, 0);
       pane.insertTab(PREVIEW_TITLE, null, myPreviewSplitter, null, RESULTS_PREVIEW_TAB_INDEX);
       myContent = pane;
-      final AnAction anAction = new DumbAwareAction() {
-        @Override
-        public void actionPerformed(AnActionEvent e) {
-          int selectedIndex = myContent.getSelectedIndex();
-          myContent.setSelectedIndex(1 - selectedIndex);
-        }
-      };
+      AnAction anAction = DumbAwareAction.create(e -> {
+        int selectedIndex = myContent.getSelectedIndex();
+        myContent.setSelectedIndex(1 - selectedIndex);
+      });
 
       final ShortcutSet shortcutSet = ActionManager.getInstance().getAction(IdeActions.ACTION_SWITCHER).getShortcutSet();
 
@@ -743,7 +741,6 @@ public class FindDialog extends DialogWrapper implements FindUI {
 
     if (validationInfo == null) {
       myHelper.getModel().copyFrom(validateModel);
-      myHelper.updateFindSettings();
 
       rememberResultsPreviewWasOpen();
       super.doOKAction();

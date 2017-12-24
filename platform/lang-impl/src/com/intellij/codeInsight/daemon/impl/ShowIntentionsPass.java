@@ -30,6 +30,7 @@ import com.intellij.codeInsight.intention.impl.config.IntentionManagerSettings;
 import com.intellij.codeInsight.template.impl.TemplateManagerImpl;
 import com.intellij.codeInsight.template.impl.TemplateState;
 import com.intellij.codeInspection.*;
+import com.intellij.codeInspection.ex.GlobalInspectionToolWrapper;
 import com.intellij.codeInspection.ex.InspectionToolWrapper;
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper;
 import com.intellij.codeInspection.ex.QuickFixWrapper;
@@ -61,6 +62,7 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.impl.source.tree.injected.InjectedLanguageUtil;
+import com.intellij.psi.util.PsiUtilCore;
 import com.intellij.util.CommonProcessors;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.Processor;
@@ -170,8 +172,8 @@ public class ShowIntentionsPass extends TextEditorHighlightingPass {
           injectedFile = InjectedLanguageUtil.findInjectedPsiNoCommit(file, offset);
           injectedEditor = InjectedLanguageUtil.getInjectedEditorForInjectedFile(editor, injectedFile);
         }
-        editorToUse = injectedEditor;
-        fileToUse = injectedFile;
+        editorToUse = injectedFile == null ? editor : injectedEditor;
+        fileToUse = injectedFile == null ? file : injectedFile;
       }
       else {
         editorToUse = editor;
@@ -305,7 +307,7 @@ public class ShowIntentionsPass extends TextEditorHighlightingPass {
                                       @NotNull final IntentionsInfo intentions,
                                       int passIdToShowIntentionsFor) {
     final PsiElement psiElement = hostFile.findElementAt(hostEditor.getCaretModel().getOffset());
-    LOG.assertTrue(psiElement == null || psiElement.isValid(), psiElement);
+    if (psiElement != null) PsiUtilCore.ensureValid(psiElement);
 
     int offset = hostEditor.getCaretModel().getOffset();
     final Project project = hostFile.getProject();
@@ -405,6 +407,9 @@ public class ShowIntentionsPass extends TextEditorHighlightingPass {
       final InspectionProfile profile = InspectionProjectProfileManager.getInstance(project).getInspectionProfile();
       final InspectionToolWrapper[] tools = profile.getInspectionTools(hostFile);
       for (InspectionToolWrapper toolWrapper : tools) {
+        if (toolWrapper instanceof GlobalInspectionToolWrapper) {
+          toolWrapper = ((GlobalInspectionToolWrapper)toolWrapper).getSharedLocalInspectionToolWrapper();
+        }
         if (toolWrapper instanceof LocalInspectionToolWrapper && !((LocalInspectionToolWrapper)toolWrapper).isUnfair()) {
           final HighlightDisplayKey key = HighlightDisplayKey.find(toolWrapper.getShortName());
           if (profile.isToolEnabled(key, hostFile) &&

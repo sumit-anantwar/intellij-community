@@ -37,7 +37,7 @@ import com.intellij.openapi.fileEditor.impl.EditorTabTitleProvider;
 import com.intellij.openapi.fileEditor.impl.FileEditorManagerImpl;
 import com.intellij.openapi.fileEditor.impl.NonProjectFileWritingAccessExtension;
 import com.intellij.openapi.fileTypes.*;
-import com.intellij.openapi.module.Module;
+import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.util.Iconable;
@@ -49,7 +49,9 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.LanguageSubstitutor;
 import com.intellij.psi.LanguageSubstitutors;
 import com.intellij.psi.PsiElement;
-import com.intellij.psi.search.*;
+import com.intellij.psi.search.LocalSearchScope;
+import com.intellij.psi.search.SearchScope;
+import com.intellij.psi.search.UseScopeEnlarger;
 import com.intellij.psi.stubs.StubElementTypeHolderEP;
 import com.intellij.psi.util.PsiUtilCore;
 import com.intellij.usages.impl.rules.UsageType;
@@ -101,7 +103,7 @@ public class ScratchFileServiceImpl extends ScratchFileService implements Persis
   @Nullable
   @Override
   public RootType getRootType(@Nullable VirtualFile file) {
-    if (file == null) return null;
+    if (file == null || !file.isInLocalFileSystem()) return null;
     VirtualFile directory = file.isDirectory() ? file : file.getParent();
     RootType result = myIndex.getInfoForFile(directory);
     return result == NULL_TYPE ? null : result;
@@ -220,7 +222,7 @@ public class ScratchFileServiceImpl extends ScratchFileService implements Persis
     }
   }
 
-  public static class FilePresentation implements FileIconProvider, EditorTabTitleProvider {
+  public static class FilePresentation implements FileIconProvider, EditorTabTitleProvider, DumbAware {
 
     @Nullable
     @Override
@@ -307,63 +309,13 @@ public class ScratchFileServiceImpl extends ScratchFileService implements Persis
     return file == null ? null : LanguageUtil.getFileTypeLanguage(FileTypeManager.getInstance().getFileTypeByFileName(file.getName()));
   }
 
-  @NotNull
-  public static GlobalSearchScope buildScratchesSearchScope() {
-    final ScratchFileService service = ScratchFileService.getInstance();
-    return new GlobalSearchScope() {
-      @NotNull
-      @Override
-      public String getDisplayName() {
-        return "Scratches and Consoles";
-      }
-
-      @Override
-      public boolean contains(@NotNull VirtualFile file) {
-        RootType rootType = file.getFileType() == ScratchFileType.INSTANCE ? service.getRootType(file) : null;
-        return  rootType != null && !rootType.isHidden();
-      }
-
-      @Override
-      public boolean isSearchOutsideRootModel() {
-        return true;
-      }
-
-      @Override
-      public int compare(@NotNull VirtualFile file1, @NotNull VirtualFile file2) {
-        return 0;
-      }
-
-      @Override
-      public boolean isSearchInModuleContent(@NotNull Module aModule) {
-        return false;
-      }
-
-      @Override
-      public boolean isSearchInLibraries() {
-        return false;
-      }
-
-      @NotNull
-      @Override
-      public GlobalSearchScope intersectWith(@NotNull GlobalSearchScope scope) {
-        if (scope instanceof ProjectAndLibrariesScope) return this;
-        return super.intersectWith(scope);
-      }
-
-      @Override
-      public String toString() {
-        return getDisplayName();
-      }
-    };
-  }
-
   public static class UseScopeExtension extends UseScopeEnlarger {
     @Nullable
     @Override
     public SearchScope getAdditionalUseScope(@NotNull PsiElement element) {
       SearchScope useScope = element.getUseScope();
       if (useScope instanceof LocalSearchScope) return null;
-      return buildScratchesSearchScope();
+      return ScratchesSearchScope.getScratchesScope(element.getProject());
     }
   }
 

@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package com.intellij.execution.actions;
 
@@ -29,7 +15,6 @@ import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.IndexNotReadyException;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.registry.Registry;
 import com.intellij.ui.SizedIcon;
 import com.intellij.ui.components.panels.NonOpaquePanel;
 import com.intellij.util.IconUtil;
@@ -84,7 +69,7 @@ public class RunConfigurationsComboBoxAction extends ComboBoxAction implements D
       if (target != DefaultExecutionTarget.INSTANCE) {
         name += " | " + target.getDisplayName();
       } else {
-        if (!settings.canRunOn(target)) {
+        if (!ExecutionTargetManager.canRun(settings, target)) {
           name += " | Nothing to run on";
         }
       }
@@ -123,7 +108,14 @@ public class RunConfigurationsComboBoxAction extends ComboBoxAction implements D
 
   @Override
   public JComponent createCustomComponent(final Presentation presentation) {
-    ComboBoxButton button = createComboBoxButton(presentation);
+    ComboBoxButton button = new ComboBoxButton(presentation) {
+      @Override
+      public Dimension getPreferredSize() {
+        Dimension d = super.getPreferredSize();
+        d.width = Math.max(d.width, JBUI.scale(75));
+        return d;
+      }
+    };
     NonOpaquePanel panel = new NonOpaquePanel(new BorderLayout());
     panel.setBorder(JBUI.Borders.emptyRight(2));
     panel.add(button);
@@ -255,7 +247,8 @@ public class RunConfigurationsComboBoxAction extends ComboBoxAction implements D
 
     @Override
     public boolean isDumbAware() {
-      return Registry.is("dumb.aware.run.configurations");
+      RunnerAndConfigurationSettings configuration = RunManager.getInstance(myProject).getSelectedConfiguration();
+      return configuration == null || configuration.getType().isDumbAware();
     }
   }
 

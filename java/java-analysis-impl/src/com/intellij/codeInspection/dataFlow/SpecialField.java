@@ -28,6 +28,8 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Arrays;
 import java.util.List;
 
+import static com.intellij.codeInspection.dataFlow.MethodContract.ValueConstraint.*;
+
 /**
  * Represents a method which is handled as a field in DFA.
  *
@@ -50,11 +52,16 @@ public enum SpecialField {
         .getArrayClass(PsiUtil.getLanguageLevel(qualifier));
       return arrayClass.findFieldByName("length", false);
     }
+
+    @Override
+    public String toString() {
+      return "Array.length";
+    }
   },
   STRING_LENGTH(CommonClassNames.JAVA_LANG_STRING, "length", true, LongRangeSet.indexRange()) {
     @Override
     public DfaValue createFromConstant(DfaValueFactory factory, @NotNull Object obj) {
-      return obj instanceof String ? factory.getConstFactory().createFromValue(((String)obj).length(), PsiType.INT, null) : null;
+      return obj instanceof String ? factory.getInt(((String)obj).length()) : null;
     }
   },
   COLLECTION_SIZE(CommonClassNames.JAVA_UTIL_COLLECTION, "size", false, LongRangeSet.indexRange()),
@@ -138,7 +145,7 @@ public enum SpecialField {
         }
       }
     }
-    return factory.getRangeFactory().create(myRange);
+    return factory.getFactValue(DfaFactType.RANGE, myRange);
   }
 
   public DfaValue createFromConstant(DfaValueFactory factory, @NotNull Object obj) {
@@ -150,9 +157,16 @@ public enum SpecialField {
    */
   public List<MethodContract> getEmptyContracts() {
     ContractValue thisValue = ContractValue.qualifier().specialField(this);
-    return Arrays.asList(MethodContract.singleConditionContract(thisValue, DfaRelationValue.RelationType.EQ, ContractValue.zero(),
-                                                                MethodContract.ValueConstraint.TRUE_VALUE),
-                         MethodContract.trivialContract(MethodContract.ValueConstraint.FALSE_VALUE));
+    return Arrays
+      .asList(MethodContract.singleConditionContract(thisValue, DfaRelationValue.RelationType.EQ, ContractValue.zero(), TRUE_VALUE),
+              MethodContract.trivialContract(FALSE_VALUE));
+  }
+
+  public List<MethodContract> getEqualsContracts() {
+    return Arrays.asList(new StandardMethodContract(new MethodContract.ValueConstraint[]{NULL_VALUE}, FALSE_VALUE),
+                         MethodContract.singleConditionContract(
+                           ContractValue.qualifier().specialField(this), DfaRelationValue.RelationType.NE,
+                           ContractValue.argument(0).specialField(this), FALSE_VALUE));
   }
 
   @Override

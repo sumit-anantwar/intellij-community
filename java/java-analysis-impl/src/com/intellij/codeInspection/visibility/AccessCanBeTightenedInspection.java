@@ -1,25 +1,12 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInspection.visibility;
 
 import com.intellij.codeInsight.daemon.GroupNames;
 import com.intellij.codeInsight.daemon.impl.UnusedSymbolUtil;
-import com.intellij.codeInspection.BaseJavaBatchLocalInspectionTool;
+import com.intellij.codeInspection.AbstractBaseJavaLocalInspectionTool;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.codeInspection.deadCode.UnusedDeclarationInspectionBase;
+import com.intellij.codeInspection.inheritance.ImplicitSubclassProvider;
 import com.intellij.openapi.progress.EmptyProgressIndicator;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Comparing;
@@ -36,10 +23,11 @@ import gnu.trove.TObjectIntHashMap;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-class AccessCanBeTightenedInspection extends BaseJavaBatchLocalInspectionTool {
+class AccessCanBeTightenedInspection extends AbstractBaseJavaLocalInspectionTool {
   private final VisibilityInspection myVisibilityInspection;
 
   AccessCanBeTightenedInspection(@NotNull VisibilityInspection visibilityInspection) {
@@ -101,6 +89,10 @@ class AccessCanBeTightenedInspection extends BaseJavaBatchLocalInspectionTool {
     }
 
     private void checkMember(@NotNull final PsiMember member) {
+      if (!myVisibilityInspection.SUGGEST_FOR_CONSTANTS && isConstantField(member)) {
+        return;
+      }
+
       final PsiClass memberClass = member.getContainingClass();
       PsiModifierList memberModifierList = member.getModifierList();
       if (memberModifierList == null) return;
@@ -163,6 +155,21 @@ class AccessCanBeTightenedInspection extends BaseJavaBatchLocalInspectionTool {
       if (memberClass != null && (memberClass.isInterface() || memberClass.isEnum() || memberClass.isAnnotationType() || PsiUtil.isLocalClass(memberClass) && member instanceof PsiClass)) {
         return currentLevel;
       }
+
+      if (memberClass != null && member instanceof PsiMethod) {
+        // If class will be subclassed by some framework then it could apply some specific requirements for methods visibility
+        // so we just skip it here (IDEA-182709, IDEA-160602)
+        for (ImplicitSubclassProvider subclassProvider : ImplicitSubclassProvider.EP_NAME.getExtensions()) {
+          if (!subclassProvider.isApplicableTo(memberClass)) continue;
+          ImplicitSubclassProvider.SubclassingInfo info = subclassProvider.getSubclassingInfo(memberClass);
+          if (info == null) continue;
+          Map<PsiMethod, ImplicitSubclassProvider.OverridingInfo> methodsInfo = info.getMethodsInfo();
+          if (methodsInfo == null || methodsInfo.containsKey(member)) {
+            return currentLevel;
+          }
+        }
+      }
+
       final PsiFile memberFile = member.getContainingFile();
       Project project = memberFile.getProject();
 
@@ -179,8 +186,7 @@ class AccessCanBeTightenedInspection extends BaseJavaBatchLocalInspectionTool {
         }
       }
 
-      PsiDirectory memberDirectory = memberFile.getContainingDirectory();
-      final PsiPackage memberPackage = memberDirectory == null ? null : JavaDirectoryService.getInstance().getPackage(memberDirectory);
+      final PsiPackage memberPackage = getPackage(memberFile);
       log(member.getName()+ ": checking effective level for "+member);
 
       AtomicInteger maxLevel = new AtomicInteger(minLevel);
@@ -262,28 +268,27 @@ class AccessCanBeTightenedInspection extends BaseJavaBatchLocalInspectionTool {
           return suggestPackageLocal(member);
         }
 
-        return !isAbstractMember && (myVisibilityInspection.SUGGEST_PRIVATE_FOR_INNERS ||
-               !isInnerClass(memberClass)) ? PsiUtil.ACCESS_LEVEL_PRIVATE : suggestPackageLocal(member);
-      }
-      //if (file == memberFile) {
-      //  return PsiUtil.ACCESS_LEVEL_PACKAGE_LOCAL;
-      //}
-      PsiExpression qualifier = null;
-      if (element instanceof PsiReferenceExpression) {
-        qualifier = ((PsiReferenceExpression)element).getQualifierExpression();
-      }
-      else if (element instanceof PsiMethodCallExpression) {
-        qualifier = ((PsiMethodCallExpression)element).getMethodExpression().getQualifierExpression();
+        return !isAbstractMember &&
+               (myVisibilityInspection.SUGGEST_PRIVATE_FOR_INNERS || !isInnerClass(memberClass)) &&
+               !calledOnInheritor(element, memberClass)
+               ? PsiUtil.ACCESS_LEVEL_PRIVATE : suggestPackageLocal(member);
       }
 
-      if (qualifier != null && !(qualifier instanceof PsiThisExpression) && !(qualifier instanceof PsiSuperExpression)) {
-        return PsiUtil.ACCESS_LEVEL_PUBLIC;
+      PsiExpression qualifier = getQualifier(element);
+      PsiElement resolvedQualifier = qualifier instanceof PsiReference ? ((PsiReference)qualifier).resolve() : null;
+      if (resolvedQualifier instanceof PsiVariable) {
+        resolvedQualifier = PsiUtil.resolveClassInClassTypeOnly(((PsiVariable)resolvedQualifier).getType());
       }
-      PsiDirectory directory = file.getContainingDirectory();
-      PsiPackage aPackage = directory == null ? null : JavaDirectoryService.getInstance().getPackage(directory);
-      if (aPackage == memberPackage || aPackage != null && memberPackage != null && Comparing.strEqual(aPackage.getQualifiedName(), memberPackage.getQualifiedName())) {
+      PsiPackage qualifierPackage = resolvedQualifier == null ? null : getPackage(resolvedQualifier);
+      PsiPackage aPackage = getPackage(file);
+
+      if (samePackages(memberPackage, aPackage) && (qualifierPackage == null || samePackages(qualifierPackage, aPackage))) {
         return suggestPackageLocal(member);
       }
+
+      // can't access protected members via "qualifier.protectedMember = 0;"
+      if (qualifier != null) return PsiUtil.ACCESS_LEVEL_PUBLIC;
+
       if (innerClass != null && memberClass != null && innerClass.isInheritor(memberClass, true)) {
         //access from subclass can be via protected, except for constructors
         PsiElement resolved = element instanceof PsiReference ? ((PsiReference)element).resolve() : null;
@@ -295,10 +300,48 @@ class AccessCanBeTightenedInspection extends BaseJavaBatchLocalInspectionTool {
       }
       return PsiUtil.ACCESS_LEVEL_PUBLIC;
     }
+
+    private boolean calledOnInheritor(@NotNull PsiElement element, PsiClass memberClass) {
+      PsiExpression qualifier = getQualifier(element);
+      if (qualifier == null) return false;
+      PsiClass qClass = PsiUtil.resolveClassInClassTypeOnly(qualifier.getType());
+      return qClass != null && qClass.isInheritor(memberClass, true);
+    }
+  }
+
+  @Nullable
+  private static PsiPackage getPackage(@NotNull PsiElement element) {
+    PsiFile file = element.getContainingFile();
+    PsiDirectory directory = file.getContainingDirectory();
+    return directory == null ? null : JavaDirectoryService.getInstance().getPackage(directory);
+  }
+
+  private static boolean samePackages(PsiPackage package1, PsiPackage package2) {
+    return package2 == package1 ||
+        package2 != null && package1 != null && Comparing.strEqual(package2.getQualifiedName(), package1.getQualifiedName());
+  }
+
+  private static PsiExpression getQualifier(@NotNull PsiElement element) {
+    PsiExpression qualifier = null;
+    if (element instanceof PsiReferenceExpression) {
+      qualifier = ((PsiReferenceExpression)element).getQualifierExpression();
+    }
+    else if (element instanceof PsiMethodCallExpression) {
+      qualifier = ((PsiMethodCallExpression)element).getMethodExpression().getQualifierExpression();
+    }
+
+    return qualifier instanceof PsiThisExpression || qualifier instanceof PsiSuperExpression ? null : qualifier;
   }
 
   private static boolean isInnerClass(@NotNull PsiClass memberClass) {
     return memberClass.getContainingClass() != null || memberClass instanceof PsiAnonymousClass;
+  }
+
+  private static boolean isConstantField(PsiMember member) {
+    return member instanceof PsiField &&
+           member.hasModifierProperty(PsiModifier.STATIC) &&
+           member.hasModifierProperty(PsiModifier.FINAL) &&
+           ((PsiField)member).hasInitializer();
   }
 
   private static boolean isInReferenceList(@Nullable PsiElement list, @NotNull final PsiMember member) {

@@ -389,11 +389,11 @@ class TabContentLayout extends ContentLayout {
     myUi.removeAll();
 
     myUi.add(myIdLabel);
-    ToolWindowContentUi.initMouseListeners(myIdLabel, myUi);
+    ToolWindowContentUi.initMouseListeners(myIdLabel, myUi, true);
 
     for (ContentTabLabel each : myTabs) {
       myUi.add(each);
-      ToolWindowContentUi.initMouseListeners(each, myUi);
+      ToolWindowContentUi.initMouseListeners(each, myUi, false);
     }
     
     myCached.clear();
@@ -412,7 +412,11 @@ class TabContentLayout extends ContentLayout {
     myContent2Tabs.put(content, tab);
     if (content instanceof DnDTarget) {
       DnDTarget target = (DnDTarget)content;
-      DnDSupport.createBuilder(tab).setDropHandler(target).setTargetChecker(target).install();
+      DnDSupport.createBuilder(tab)
+        .setDropHandler(target)
+        .setTargetChecker(target)
+        .setCleanUpOnLeaveCallback(() -> target.cleanUpOnLeave())
+        .install();
     }
     
     myCached.clear();

@@ -21,6 +21,7 @@
       <option name="SEPARATOR_ABOVE_COLOR" value=""/>
       <option name="SEPARATOR_BELOW_COLOR" value="e4e4e4"/>
       <option name="READONLY_FRAGMENT_BACKGROUND" value="cfe7ff"/>
+      <option name="VISUAL_INDENT_GUIDE" value="eeeeee"/>
 
       <option name="ADDED_LINES_COLOR" value="c9dec1" deuteranopia="99ca90" protanopia="99ca90"/>
       <option name="MODIFIED_LINES_COLOR" value="c3d6e8" deuteranopia="9ca9bf" protanopia="9ca9bf"/>
@@ -428,8 +429,8 @@
       </option>
       <option name="INLINE_PARAMETER_HINT_HIGHLIGHTED">
         <value>
-          <option name="FOREGROUND" value="ffffff"/>
-          <option name="BACKGROUND" value="787878"/>
+          <option name="FOREGROUND" value="5b5b5b"/>
+          <option name="BACKGROUND" value="c0c0c0"/>
         </value>
       </option>
       <option name="IMPLICIT_ANONYMOUS_CLASS_PARAMETER_ATTRIBUTES">
@@ -743,6 +744,12 @@
           <option name="FOREGROUND"/>
           <option name="BACKGROUND"/>
           <option name="EFFECT_COLOR" value="404040"/>
+          <option name="EFFECT_TYPE" value="3"/>
+        </value>
+      </option>
+      <option name="MARKED_FOR_REMOVAL_ATTRIBUTES">
+        <value>
+          <option name="EFFECT_COLOR" value="ff0000"/>
           <option name="EFFECT_TYPE" value="3"/>
         </value>
       </option>
@@ -1126,6 +1133,7 @@
       <option name="DIFF_SEPARATORS_TOP_BORDER" value="1E1E1E"/>
       <option name="DIFF_SEPARATORS_BACKGROUND" value="232323"/>
       <option name="DIFF_SEPARATORS_BOTTOM_BORDER" value="222222"/>
+      <option name="VISUAL_INDENT_GUIDE" value="3c3c3c"/>
 
       <option name="VCS_ANNOTATIONS_COLOR_1" value="464c43"/>
       <option name="VCS_ANNOTATIONS_COLOR_2" value="444342"/>
@@ -1522,6 +1530,13 @@
           <option name="EFFECT_TYPE" value="3" />
         </value>
       </option>
+      <option name="MARKED_FOR_REMOVAL_ATTRIBUTES">
+        <value>
+          <option name="EFFECT_COLOR" value="bc3f3c" deuteranopia="e57132" protanopia="e57132"/>
+          <option name="EFFECT_TYPE" value="3"/>
+        </value>
+      </option>
+
       <option name="DIFF_CONFLICT">
         <value>
           <option name="BACKGROUND" value="45302b" deuteranopia="453900" protanopia="453900"/>
@@ -1693,8 +1708,8 @@
       </option>
       <option name="INLINE_PARAMETER_HINT_HIGHLIGHTED">
         <value>
-          <option name="FOREGROUND" value="1d1d1d"/>
-          <option name="BACKGROUND" value="7a7a7a"/>
+          <option name="FOREGROUND" value="acacac"/>
+          <option name="BACKGROUND" value="686868"/>
         </value>
       </option>
       <option name="IMPLICIT_ANONYMOUS_CLASS_PARAMETER_ATTRIBUTES">
@@ -1730,11 +1745,6 @@
         <value>
           <option name="FOREGROUND" value="cc7832" deuteranopia="597cc2" protanopia="597cc2"/>
           <option name="FONT_TYPE" value="1" />
-        </value>
-      </option>
-      <option name="JSP_SCRIPTING_BACKGROUND">
-        <value>
-          <option name="FOREGROUND" value="cc7832" deuteranopia="597cc2" protanopia="597cc2"/>
         </value>
       </option>
       <option name="LESS_VARIABLE">
@@ -1909,7 +1919,7 @@
       <option name="SEARCH_RESULT_ATTRIBUTES">
         <value>
           <option name="BACKGROUND" value="155221" deuteranopia="404861" protanopia="404861"/>
-          <option name="ERROR_STRIPE_COLOR" deuteranopia="4b6f99" protanopia="4b6f99"/>
+          <option name="ERROR_STRIPE_COLOR" value="00530d" deuteranopia="4b6f99" protanopia="4b6f99"/>
         </value>
       </option>
       <option name="SPY-JS.FUNCTION_SCOPE">
@@ -2077,7 +2087,7 @@
       <option name="WRITE_SEARCH_RESULT_ATTRIBUTES">
         <value>
           <option name="BACKGROUND" value="532b2e" deuteranopia="2f4794" protanopia="2f4794"/>
-          <option name="ERROR_STRIPE_COLOR" deuteranopia="5fcc" protanopia="5fcc"/>
+          <option name="ERROR_STRIPE_COLOR" value="8d4457" deuteranopia="5fcc" protanopia="5fcc"/>
         </value>
       </option>
       <option name="WRONG_REFERENCES_ATTRIBUTES">

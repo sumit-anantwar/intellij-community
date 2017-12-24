@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInsight.hint;
 
 import com.intellij.ide.IdeTooltip;
@@ -26,6 +12,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.LogicalPosition;
 import com.intellij.openapi.editor.ScrollType;
+import com.intellij.openapi.editor.VisualPosition;
 import com.intellij.openapi.editor.event.*;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.editor.markup.*;
@@ -72,6 +59,7 @@ public class HintManagerImpl extends HintManager implements Disposable {
   private final List<HintInfo> myHintsStack = new ArrayList<>();
   private Editor myLastEditor;
   private final Alarm myHideAlarm = new Alarm();
+  private boolean myRequestFocusForNextHint;
 
   private static int getPriority(QuestionAction action) {
     return action instanceof PriorityQuestionAction ? ((PriorityQuestionAction)action).getPriority() : 0;
@@ -193,6 +181,20 @@ public class HintManagerImpl extends HintManager implements Disposable {
   @Override
   public boolean isHint(Window component) {
     return myHintsStack.contains(component);
+  }
+
+  /**
+   * Sets whether the next {@code showXxx} call will request the focus to the
+   * newly shown tooltip. Note the flag applies only to the next call, i.e. is
+   * reset to {@code false} after any {@code showXxx} is called.
+   *
+   * <p>Note: This method was created to avoid the code churn associated with
+   * creating an overload to every {@code showXxx} method with an additional
+   * {@code boolean requestFocus} parameter </p>
+   */
+  @Override
+  public void setRequestFocusForNextHint(boolean requestFocus) {
+    myRequestFocusForNextHint = requestFocus;
   }
 
   @NotNull
@@ -344,8 +346,9 @@ public class HintManagerImpl extends HintManager implements Disposable {
 
     // Set focus to control so that screen readers will announce the tooltip contents.
     // Users can press "ESC" to return to the editor.
-    if (ScreenReader.isActive()) {
+    if (myRequestFocusForNextHint) {
       hintInfo.setRequestFocus(true);
+      myRequestFocusForNextHint = false;
     }
     doShowInGivenLocation(hint, editor, p, hintInfo, true);
 
@@ -597,21 +600,32 @@ public class HintManagerImpl extends HintManager implements Disposable {
                                       @NotNull Editor editor,
                                       @NotNull LogicalPosition pos,
                                       @PositionFlags short constraint) {
+    VisualPosition visualPos = editor.logicalToVisualPosition(pos);
+    return getHintPosition(hint, editor, visualPos, visualPos, constraint);
+  }
+
+  /**
+   * @return position of hint in layered pane coordinate system
+   */
+  public static Point getHintPosition(@NotNull LightweightHint hint,
+                                      @NotNull Editor editor,
+                                      @NotNull VisualPosition pos,
+                                      @PositionFlags short constraint) {
     return getHintPosition(hint, editor, pos, pos, constraint);
   }
 
   private static Point getHintPosition(@NotNull LightweightHint hint,
                                        @NotNull Editor editor,
-                                       @NotNull LogicalPosition pos1,
-                                       @NotNull LogicalPosition pos2,
+                                       @NotNull VisualPosition pos1,
+                                       @NotNull VisualPosition pos2,
                                        @PositionFlags short constraint) {
     return getHintPosition(hint, editor, pos1, pos2, constraint, Registry.is("editor.balloonHints"));
   }
 
   private static Point getHintPosition(@NotNull LightweightHint hint,
                                        @NotNull Editor editor,
-                                       @NotNull LogicalPosition pos1,
-                                       @NotNull LogicalPosition pos2,
+                                       @NotNull VisualPosition pos1,
+                                       @NotNull VisualPosition pos2,
                                        @PositionFlags short constraint,
                                        boolean showByBalloon) {
     if (ApplicationManager.getApplication().isUnitTestMode()) return new Point();
@@ -649,8 +663,8 @@ public class HintManagerImpl extends HintManager implements Disposable {
 
   private static Point _getHintPosition(@NotNull LightweightHint hint,
                                         @NotNull Editor editor,
-                                        @NotNull LogicalPosition pos1,
-                                        @NotNull LogicalPosition pos2,
+                                        @NotNull VisualPosition pos1,
+                                        @NotNull VisualPosition pos2,
                                         @PositionFlags short constraint,
                                         boolean showByBalloon) {
     Dimension hintSize = hint.getComponent().getPreferredSize();
@@ -659,14 +673,14 @@ public class HintManagerImpl extends HintManager implements Disposable {
     JComponent externalComponent = getExternalComponent(editor);
     JComponent internalComponent = editor.getContentComponent();
     if (constraint == RIGHT_UNDER) {
-      Point p = editor.logicalPositionToXY(pos2);
+      Point p = editor.visualPositionToXY(pos2);
       if (!showByBalloon) {
         p.y += editor.getLineHeight();
       }
       location = SwingUtilities.convertPoint(internalComponent, p, externalComponent);
     }
     else {
-      Point p = editor.logicalPositionToXY(pos1);
+      Point p = editor.visualPositionToXY(pos1);
       if (constraint == UNDER) {
         p.y += editor.getLineHeight();
       }
@@ -737,8 +751,8 @@ public class HintManagerImpl extends HintManager implements Disposable {
                             int timeout) {
     JComponent label = HintUtil.createErrorLabel(hintText);
     LightweightHint hint = new LightweightHint(label);
-    final LogicalPosition pos1 = editor.offsetToLogicalPosition(offset1);
-    final LogicalPosition pos2 = editor.offsetToLogicalPosition(offset2);
+    final VisualPosition pos1 = editor.offsetToVisualPosition(offset1);
+    final VisualPosition pos2 = editor.offsetToVisualPosition(offset2);
     final Point p = getHintPosition(hint, editor, pos1, pos2, constraint);
     showEditorHint(hint, editor, p, flags, timeout, false);
   }
@@ -757,8 +771,8 @@ public class HintManagerImpl extends HintManager implements Disposable {
                                @NotNull final LightweightHint hint,
                                @NotNull final QuestionAction action,
                                @PositionFlags short constraint) {
-    final LogicalPosition pos1 = editor.offsetToLogicalPosition(offset1);
-    final LogicalPosition pos2 = editor.offsetToLogicalPosition(offset2);
+    final VisualPosition pos1 = editor.offsetToVisualPosition(offset1);
+    final VisualPosition pos2 = editor.offsetToVisualPosition(offset2);
     final Point p = getHintPosition(hint, editor, pos1, pos2, constraint);
     showQuestionHint(editor, p, offset1, offset2, hint, action, constraint);
   }

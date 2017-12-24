@@ -795,9 +795,7 @@ public class CtrlMouseHandler extends AbstractProjectComponent {
     void execute(@NotNull BrowseMode browseMode) {
       myBrowseMode = browseMode;
 
-      Document document = myEditor.getDocument();
-      final PsiFile file = PsiDocumentManager.getInstance(myProject).getPsiFile(document);
-      if (file == null) return;
+      if (PsiDocumentManager.getInstance(myProject).getPsiFile(myEditor.getDocument()) == null) return;
 
       if (EditorUtil.inVirtualSpace(myEditor, myPosition)) {
         disposeHighlighter();
@@ -816,7 +814,7 @@ public class CtrlMouseHandler extends AbstractProjectComponent {
           @Nullable
           @Override
           public Continuation performInReadAction(@NotNull ProgressIndicator indicator) throws ProcessCanceledException {
-            return doExecute(file, offset);
+            return doExecute(offset);
           }
 
           @Override
@@ -827,8 +825,11 @@ public class CtrlMouseHandler extends AbstractProjectComponent {
     }
 
     @Nullable
-    private ReadTask.Continuation doExecute(@NotNull PsiFile file, int offset) {
+    private ReadTask.Continuation doExecute(int offset) {
       if (isTaskOutdated()) return null;
+
+      PsiFile file = PsiDocumentManager.getInstance(myProject).getPsiFile(myEditor.getDocument());
+      if (file == null) return null;
 
       final Info info;
       final DocInfo docInfo;
@@ -1044,7 +1045,14 @@ public class CtrlMouseHandler extends AbstractProjectComponent {
       for (AbstractDocumentationTooltipAction action : ourTooltipActions) {
         Icon icon = action.getTemplatePresentation().getIcon();
         Dimension minSize = new Dimension(icon.getIconWidth(), icon.getIconHeight());
-        myButtons.add(new ActionButton(action, presentationFactory.getPresentation(action), IdeTooltipManager.IDE_TOOLTIP_PLACE, minSize));
+        ActionButton actionButton =
+          new ActionButton(action, presentationFactory.getPresentation(action), IdeTooltipManager.IDE_TOOLTIP_PLACE, minSize) {
+            @Override
+            protected boolean checkSkipPressForEvent(@NotNull MouseEvent e) {
+              return e.getButton() != MouseEvent.BUTTON1;
+            }
+          };
+        myButtons.add(actionButton);
         action.setDocInfo(documentationAnchor, elementUnderMouse);
       }
       Collections.reverse(myButtons);

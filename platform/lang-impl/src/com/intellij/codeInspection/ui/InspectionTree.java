@@ -1,26 +1,16 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
  */
 
 package com.intellij.codeInspection.ui;
 
+import com.intellij.codeHighlighting.HighlightDisplayLevel;
 import com.intellij.codeInspection.CommonProblemDescriptor;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ex.GlobalInspectionContextImpl;
 import com.intellij.codeInspection.ex.InspectionToolWrapper;
 import com.intellij.codeInspection.reference.RefEntity;
+import com.intellij.concurrency.ConcurrentCollectionFactory;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -30,21 +20,24 @@ import com.intellij.psi.PsiElement;
 import com.intellij.ui.TreeSpeedSearch;
 import com.intellij.ui.treeStructure.Tree;
 import com.intellij.util.ArrayUtil;
+import com.intellij.util.ConcurrencyUtil;
 import com.intellij.util.SmartList;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.MultiMap;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.tree.TreeUtil;
+import gnu.trove.TObjectHashingStrategy;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.event.TreeExpansionEvent;
 import javax.swing.event.TreeWillExpandListener;
 import javax.swing.tree.DefaultTreeModel;
-import javax.swing.tree.ExpandVetoException;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
+import java.awt.event.MouseEvent;
 import java.util.*;
+import java.util.concurrent.ConcurrentMap;
 
 import static com.intellij.codeInspection.CommonProblemDescriptor.DESCRIPTOR_COMPARATOR;
 
@@ -52,7 +45,9 @@ public class InspectionTree extends Tree {
   private static final Logger LOG = Logger.getInstance(InspectionTree.class);
 
   @NotNull private final GlobalInspectionContextImpl myContext;
-  @NotNull private final ExcludedInspectionTreeNodesManager myExcludedManager;
+  @NotNull private final ConcurrentMap<HighlightDisplayLevel, InspectionSeverityGroupNode> mySeverityGroupNodes = ContainerUtil.newConcurrentMap();
+  @NotNull private final ConcurrentMap<HighlightDisplayLevel, ConcurrentMap<String[], InspectionGroupNode>> myGroups = ContainerUtil.newConcurrentMap();
+
   @NotNull private InspectionTreeState myState = new InspectionTreeState();
   private boolean myQueueUpdate;
 
@@ -61,7 +56,6 @@ public class InspectionTree extends Tree {
     Project project = context.getProject();
     setModel(new DefaultTreeModel(new InspectionRootNode(project, new InspectionTreeUpdater(view))));
     myContext = context;
-    myExcludedManager = view.getExcludedManager();
 
     setCellRenderer(new InspectionTreeCellRenderer(view));
     setRootVisible(false);
@@ -91,6 +85,8 @@ public class InspectionTree extends Tree {
   }
 
   public void removeAllNodes() {
+    mySeverityGroupNodes.clear();
+    myGroups.clear();
     getRoot().removeAllChildren();
     ApplicationManager.getApplication().invokeLater(() -> nodeStructureChanged(getRoot()));
   }
@@ -106,7 +102,7 @@ public class InspectionTree extends Tree {
     final TreePath commonPath = TreeUtil.findCommonPath(paths);
     for (Object n : commonPath.getPath()) {
       if (n instanceof InspectionGroupNode) {
-        return ((InspectionGroupNode)n).getGroupPath();
+        return getGroupPath((InspectionGroupNode)n);
       }
     }
     return null;
@@ -141,6 +137,15 @@ public class InspectionTree extends Tree {
     }
 
     return toolWrapper;
+  }
+
+  @Override
+  public String getToolTipText(MouseEvent e) {
+    TreePath path = getPathForLocation(e.getX(), e.getY());
+    if (path == null) return null;
+    Object lastComponent = path.getLastPathComponent();
+    if (!(lastComponent instanceof ProblemDescriptionNode)) return null;
+    return ((ProblemDescriptionNode)lastComponent).getToolTipText();
   }
 
   @Nullable
@@ -283,6 +288,70 @@ public class InspectionTree extends Tree {
     return descriptors.toArray(new CommonProblemDescriptor[descriptors.size()]);
   }
 
+  @NotNull
+  InspectionTreeNode getToolParentNode(@NotNull InspectionToolWrapper toolWrapper,
+                                       HighlightDisplayLevel errorLevel,
+                                       boolean groupedBySeverity,
+                                       boolean isSingleInspectionRun) {
+    //synchronize
+    if (!groupedBySeverity && isSingleInspectionRun) {
+      return getRoot();
+    }
+    String[] groupPath = toolWrapper.getGroupPath();
+    if (groupPath.length == 0) {
+      LOG.error("groupPath is empty for tool: " + toolWrapper.getShortName() + ", class: " + toolWrapper.getTool().getClass());
+      return getRelativeRootNode(groupedBySeverity, errorLevel);
+    }
+    ConcurrentMap<String[], InspectionGroupNode> map = myGroups.get(errorLevel);
+    if (map == null) {
+      map = ConcurrencyUtil.cacheOrGet(myGroups, errorLevel, ConcurrentCollectionFactory.createMap(new TObjectHashingStrategy<String[]>() {
+        @Override
+        public int computeHashCode(String[] object) {
+          return Arrays.hashCode(object);
+        }
+
+        @Override
+        public boolean equals(String[] o1, String[] o2) {
+          return Arrays.equals(o1, o2);
+        }
+      }));
+    }
+    InspectionGroupNode group;
+    if (groupedBySeverity) {
+      group = map.get(groupPath);
+    }
+    else {
+      group = null;
+      for (Map<String[], InspectionGroupNode> groupMap : myGroups.values()) {
+        if ((group = groupMap.get(groupPath)) != null) break;
+      }
+    }
+    if (group == null) {
+      if (isSingleInspectionRun) {
+        return getRelativeRootNode(true, errorLevel);
+      }
+      group = map.computeIfAbsent(groupPath, p -> insertGroupNode(p, getRelativeRootNode(groupedBySeverity, errorLevel)));
+    }
+    return group;
+  }
+
+  @NotNull
+  private InspectionTreeNode getRelativeRootNode(boolean isGroupedBySeverity, HighlightDisplayLevel level) {
+    if (isGroupedBySeverity) {
+      InspectionSeverityGroupNode severityGroupNode = mySeverityGroupNodes.get(level);
+      if (severityGroupNode == null) {
+        InspectionSeverityGroupNode newNode = new InspectionSeverityGroupNode(myContext.getProject(), level);
+        severityGroupNode = ConcurrencyUtil.cacheOrGet(mySeverityGroupNodes, level, newNode);
+        if (severityGroupNode == newNode) {
+          InspectionTreeNode root = getRoot();
+          root.insertByOrder(severityGroupNode, false);
+        }
+      }
+      return severityGroupNode;
+    }
+    return getRoot();
+  }
+
   public boolean areDescriptorNodesSelected() {
     final TreePath[] paths = getSelectionPaths();
     if (paths == null) return false;
@@ -302,12 +371,12 @@ public class InspectionTree extends Tree {
     return count;
   }
 
-  private void processChildDescriptorsDeep(InspectionTreeNode node,
-                                           List<CommonProblemDescriptor> descriptors,
-                                           boolean sortedByPosition,
-                                           boolean allowResolved,
-                                           boolean allowSuppressed,
-                                           @Nullable Set<VirtualFile> readOnlyFilesSink) {
+  private static void processChildDescriptorsDeep(InspectionTreeNode node,
+                                                  List<CommonProblemDescriptor> descriptors,
+                                                  boolean sortedByPosition,
+                                                  boolean allowResolved,
+                                                  boolean allowSuppressed,
+                                                  @Nullable Set<VirtualFile> readOnlyFilesSink) {
     List<CommonProblemDescriptor> descriptorChildren = null;
     for (int i = 0; i < node.getChildCount(); i++) {
       final TreeNode child = node.getChildAt(i);
@@ -340,9 +409,9 @@ public class InspectionTree extends Tree {
     }
   }
 
-  private boolean isNodeValidAndIncluded(ProblemDescriptionNode node, boolean allowResolved, boolean allowSuppressed) {
+  private static boolean isNodeValidAndIncluded(ProblemDescriptionNode node, boolean allowResolved, boolean allowSuppressed) {
     return node.isValid() && (allowResolved ||
-                              (!node.isExcluded(myExcludedManager) &&
+                              (!node.isExcluded() &&
                                (!node.isAlreadySuppressedFromView() || (allowSuppressed && !node.getAvailableSuppressActions().isEmpty())) &&
                                !node.isQuickFixAppliedFromView()));
   }
@@ -359,10 +428,6 @@ public class InspectionTree extends Tree {
     myState.restoreExpansionAndSelection(this, treeNodesMightChange);
   }
 
-  public void setState(@NotNull InspectionTreeState state) {
-    myState = state;
-  }
-
   public InspectionTreeState getTreeState() {
     return myState;
   }
@@ -373,13 +438,13 @@ public class InspectionTree extends Tree {
 
   private class ExpandListener implements TreeWillExpandListener {
     @Override
-    public void treeWillExpand(TreeExpansionEvent event) throws ExpandVetoException {
+    public void treeWillExpand(TreeExpansionEvent event) {
       final InspectionTreeNode node = (InspectionTreeNode)event.getPath().getLastPathComponent();
       myState.getExpandedUserObjects().add(node.getUserObject());
     }
 
     @Override
-    public void treeWillCollapse(TreeExpansionEvent event) throws ExpandVetoException {
+    public void treeWillCollapse(TreeExpansionEvent event) {
       InspectionTreeNode node = (InspectionTreeNode)event.getPath().getLastPathComponent();
       myState.getExpandedUserObjects().remove(node.getUserObject());
     }
@@ -388,6 +453,38 @@ public class InspectionTree extends Tree {
   @NotNull
   public GlobalInspectionContextImpl getContext() {
     return myContext;
+  }
+
+  private InspectionGroupNode insertGroupNode(@NotNull String[] groupPath, InspectionTreeNode parent) {
+    InspectionTreeNode currentNode = parent;
+
+    for (int groupIdx = 0; groupIdx < groupPath.length; groupIdx++) {
+      String subGroup = groupPath[groupIdx];
+
+      InspectionTreeNode next = null;
+      for (int i = 0; i < currentNode.getChildCount(); i++) {
+        TreeNode child = currentNode.getChildAt(i);
+        if (child instanceof InspectionGroupNode && ((InspectionGroupNode)child).getSubGroup().equals(subGroup)) {
+          next = (InspectionTreeNode)child;
+          break;
+        }
+      }
+
+      if (next == null) {
+        for (int i = groupIdx; i < groupPath.length; i++) {
+          InspectionResultsView view = getContext().getView();
+          if (view != null && !view.isDisposed()) {
+            currentNode = currentNode.insertByOrder(new InspectionGroupNode(groupPath[i]), false);
+          }
+        }
+        break;
+      }
+      else {
+        currentNode = next;
+      }
+    }
+
+    return (InspectionGroupNode)currentNode;
   }
 
   private static void collectReadOnlyFiles(@NotNull Collection<CommonProblemDescriptor> descriptors, @NotNull Set<VirtualFile> readOnlySink) {
@@ -403,5 +500,17 @@ public class InspectionTree extends Tree {
         readOnlySink.add(psiElement.getContainingFile().getVirtualFile());
       }
     }
+  }
+
+  @NotNull
+  private static String[] getGroupPath(@NotNull InspectionGroupNode node) {
+    List<String> path = new ArrayList<>(2);
+    while (true) {
+      TreeNode parent = node.getParent();
+      if (!(parent instanceof InspectionGroupNode)) break;
+      node = (InspectionGroupNode)parent;
+      path.add(node.getSubGroup());
+    }
+    return ArrayUtil.toStringArray(path);
   }
 }

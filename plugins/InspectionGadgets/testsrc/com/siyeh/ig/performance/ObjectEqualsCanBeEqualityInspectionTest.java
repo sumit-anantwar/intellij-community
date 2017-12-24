@@ -27,7 +27,7 @@ public class ObjectEqualsCanBeEqualityInspectionTest extends LightInspectionTest
   public void testClass() {
     doTest("class X {" +
            "  boolean m(Class c1, Class c2) {" +
-           "    return c1./*'!equals()' can be replaced with '!='*/equals/**/(c2);" +
+           "    return c1./*'equals()' can be replaced with '=='*/equals/**/(c2);" +
            "  }" +
            "}");
   }
@@ -49,6 +49,26 @@ public class ObjectEqualsCanBeEqualityInspectionTest extends LightInspectionTest
            "}" +
            "enum E {" +
            "  A,B,C" +
+           "}");
+  }
+
+  public void testString() {
+    doTest("class X {" +
+           "  boolean isRighteous(String a) {" +
+           "    return a.equals(\"righteous\");" +
+           "  }" +
+           "}");
+  }
+
+  public void testSingleton() {
+    doTest("class Singleton {" +
+           "  private static final Singleton INSTANCE = new Singleton();" +
+           "  private Singleton() {}" +
+           "}" +
+           "class U {" +
+           "  boolean f(Singleton s1, Singleton s2) {" +
+           "    return s1./*'equals()' can be replaced with '=='*/equals/**/(s2);" +
+           "  }" +
            "}");
   }
 

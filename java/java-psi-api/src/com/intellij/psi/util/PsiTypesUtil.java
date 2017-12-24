@@ -60,6 +60,30 @@ public class PsiTypesUtil {
 
   private PsiTypesUtil() { }
 
+  public static Object getDefaultValue(PsiType type) {
+    if (!(type instanceof PsiPrimitiveType)) return null;
+    switch (type.getCanonicalText()) {
+      case "boolean":
+        return false;
+      case "byte":
+        return (byte)0;
+      case "char":
+        return '\0';
+      case "short":
+        return (short)0;
+      case "int":
+        return 0;
+      case "long":
+        return 0L;
+      case "float":
+        return 0F;
+      case "double":
+        return 0D;
+      default:
+        return null;
+    }
+  }
+
   @NotNull
   public static String getDefaultValueOfType(PsiType type) {
     return getDefaultValueOfType(type, false);
@@ -192,7 +216,11 @@ public class PsiTypesUtil {
   }
 
   public static boolean isGetClass(PsiMethod method) {
-    return GET_CLASS_METHOD.equals(method.getName()) && CommonClassNames.JAVA_LANG_OBJECT.equals(method.getContainingClass().getQualifiedName());
+    if (GET_CLASS_METHOD.equals(method.getName())) {
+      PsiClass aClass = method.getContainingClass();
+      return aClass != null && CommonClassNames.JAVA_LANG_OBJECT.equals(aClass.getQualifiedName());
+    }
+    return false;
   }
 
   @Nullable
@@ -219,6 +247,10 @@ public class PsiTypesUtil {
     final PsiElement parent = PsiUtil.skipParenthesizedExprUp(element.getParent());
     if (parent instanceof PsiVariable) {
       if (PsiUtil.checkSameExpression(element, ((PsiVariable)parent).getInitializer())) {
+        PsiTypeElement typeElement = ((PsiVariable)parent).getTypeElement();
+        if (typeElement != null && typeElement.isInferredType()) {
+          return null;
+        }
         return ((PsiVariable)parent).getType();
       }
     }
@@ -255,8 +287,7 @@ public class PsiTypesUtil {
       }
       else if (gParent instanceof PsiArrayInitializerExpression) {
         final PsiType expectedTypeByParent = getExpectedTypeByParent(parent);
-        return expectedTypeByParent != null && expectedTypeByParent instanceof PsiArrayType
-               ? ((PsiArrayType)expectedTypeByParent).getComponentType() : null;
+        return expectedTypeByParent instanceof PsiArrayType ? ((PsiArrayType)expectedTypeByParent).getComponentType() : null;
       }
     }
     return null;
@@ -321,7 +352,7 @@ public class PsiTypesUtil {
         return arrayType.getComponentType().accept(this);
       }
 
-      @Nullable
+      @NotNull
       @Override
       public Boolean visitWildcardType(PsiWildcardType wildcardType) {
         final PsiType bound = wildcardType.getBound();
@@ -363,6 +394,18 @@ public class PsiTypesUtil {
   public static PsiTypeParameter[] filterUnusedTypeParameters(final PsiType superReturnTypeInBaseClassType,
                                                               @NotNull PsiTypeParameter[] typeParameters) {
     return filterUnusedTypeParameters(typeParameters, superReturnTypeInBaseClassType);
+  }
+
+  public static boolean isAccessibleAt(PsiTypeParameter parameter, PsiElement context) {
+    PsiTypeParameterListOwner owner = parameter.getOwner();
+    if(owner instanceof PsiMethod) {
+      return PsiTreeUtil.isAncestor(owner, context, false);
+    }
+    if(owner instanceof PsiClass) {
+      return PsiTreeUtil.isAncestor(owner, context, false) &&
+             InheritanceUtil.hasEnclosingInstanceInScope((PsiClass)owner, context, false, false);
+    }
+    return false;
   }
 
   public static class TypeParameterSearcher extends PsiTypeVisitor<Boolean> {

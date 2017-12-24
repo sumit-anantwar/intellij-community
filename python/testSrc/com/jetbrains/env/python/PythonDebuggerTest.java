@@ -3,6 +3,7 @@ package com.jetbrains.env.python;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.testFramework.UsefulTestCase;
 import com.intellij.testFramework.fixtures.IdeaProjectTestFixture;
@@ -19,10 +20,8 @@ import com.jetbrains.env.ut.PyUnitTestProcessRunner;
 import com.jetbrains.python.PythonHelpersLocator;
 import com.jetbrains.python.console.pydev.PydevCompletionVariant;
 import com.jetbrains.python.debugger.PyDebugValue;
-import com.jetbrains.python.debugger.PyDebuggerException;
 import com.jetbrains.python.debugger.PyExceptionBreakpointProperties;
 import com.jetbrains.python.debugger.PyExceptionBreakpointType;
-import com.jetbrains.python.debugger.pydev.PyDebugCallback;
 import com.jetbrains.python.debugger.settings.PyDebuggerSettings;
 import com.jetbrains.python.debugger.settings.PySteppingFilter;
 import com.jetbrains.python.sdk.flavors.PythonSdkFlavor;
@@ -35,8 +34,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
+import static org.junit.Assert.*;
 
 /**
  * @author traff
@@ -82,10 +80,11 @@ public class PythonDebuggerTest extends PyEnvTestCase {
   @Test
   @Staging
   public void testPydevTests_Debugger() {
-    unittests("tests_pydevd_python/test_debugger.py", null);
+    unittests("tests_pydevd_python/test_debugger.py", null, true);
   }
 
   @Test
+  @Staging
   public void testPydevMonkey() {
     unittests("tests_pydevd_python/test_pydev_monkey.py", null);
   }
@@ -176,6 +175,7 @@ public class PythonDebuggerTest extends PyEnvTestCase {
   }
 
   @Test
+  @Staging
   public void testDebugConsole() {
     runPythonTest(new PyDebuggerTask("/debug", "test1.py") {
       @Override
@@ -207,19 +207,6 @@ public class PythonDebuggerTest extends PyEnvTestCase {
         waitForOutput("SyntaxError");
 
         resume();
-      }
-
-      private void consoleExec(String command) {
-        myDebugProcess.consoleExec(command, new PyDebugCallback<String>() {
-          @Override
-          public void ok(String value) {
-
-          }
-
-          @Override
-          public void error(PyDebuggerException exception) {
-          }
-        });
       }
     });
   }
@@ -395,6 +382,7 @@ public class PythonDebuggerTest extends PyEnvTestCase {
   }
 
   @Test
+  @Staging
   public void testRunToLine() {
     runPythonTest(new PyDebuggerTask("/debug", "test_runtoline.py") {
       @Override
@@ -1167,11 +1155,17 @@ public class PythonDebuggerTest extends PyEnvTestCase {
         toggleBreakpoint(getFilePath(getScriptName()), 3);
       }
 
+      private String getRefWithWordInName(List<String> referrersNames, String word) {
+        return referrersNames.stream().filter(x -> x.contains(word)).findFirst().get();
+      }
+
       @Override
       public void testing() throws Exception {
         waitForPause();
-        int numberOfReferringObjects = getNumberOfReferringObjects("l");
-        assertEquals(3, numberOfReferringObjects);
+        List<String> referrersNames = getNumberOfReferringObjects("l");
+        assertNotNull(getRefWithWordInName(referrersNames, "frame"));
+        assertNotNull(getRefWithWordInName(referrersNames, "module"));
+        assertNotNull(getRefWithWordInName(referrersNames, "dict"));
       }
 
       @NotNull
@@ -1290,6 +1284,64 @@ public class PythonDebuggerTest extends PyEnvTestCase {
     });
   }
 
+  @Test
+  public void testSetNextStatement() {
+    runPythonTest(new PyDebuggerTask("/debug", "test_set_next_statement.py") {
+      @Override
+      public void before() {
+        toggleBreakpoint(getFilePath(getScriptName()), 1);
+        toggleBreakpoint(getFilePath(getScriptName()), 6);
+      }
+
+      @Override
+      public void testing() throws Exception {
+        waitForPause();
+        eval("x").hasValue("0");
+        // jump on a top level
+        Pair<Boolean, String> pair = setNextStatement(7);
+        waitForPause();
+        assertTrue(pair.first);
+        eval("x").hasValue("1");
+        // try to jump into a loop
+        pair = setNextStatement(9);
+        // do not wait for pause here, because we don't refresh suspension for incorrect jumps
+        assertFalse(pair.first);
+        assertTrue(pair.second.startsWith("Error:"));
+        resume();
+        waitForPause();
+        eval("a").hasValue("3");
+        // jump inside a function
+        pair = setNextStatement(2);
+        waitForPause();
+        assertTrue(pair.first);
+        eval("a").hasValue("6");
+        resume();
+      }
+    });
+  }
+
+  @Test
+  public void testLoadValuesAsync() {
+    runPythonTest(new PyDebuggerTask("/debug", "test_async_eval.py") {
+      @Override
+      public void before() {
+        toggleBreakpoint(getFilePath(getScriptName()), 14);
+      }
+
+      @Override
+      public void testing() throws Exception {
+        waitForPause();
+        List<PyDebugValue> frameVariables = loadFrame();
+        String result = computeValueAsync(frameVariables, "f");
+        assertEquals("foo", result);
+
+        List<PyDebugValue> listChildren = loadChildren(frameVariables, "l");
+        result = computeValueAsync(listChildren, "0");
+        assertEquals("list", result);
+      }
+    });
+  }
+
   //TODO: That doesn't work now: case from test_continuation.py and test_continuation2.py are treated differently by interpreter
   // (first line is executed in first case and last line in second)
 
@@ -1325,7 +1377,6 @@ public class PythonDebuggerTest extends PyEnvTestCase {
     });
   }
 
-  @Staging
   @Test
   public void testModuleInterpreterOption() {
     runPythonTest(new BreakpointStopAndEvalTask("test1") {
@@ -1335,7 +1386,66 @@ public class PythonDebuggerTest extends PyEnvTestCase {
         setScriptName("test1");
         setWaitForTermination(false);
 
-        myRunConfiguration.setInterpreterOptions("-m");
+        myRunConfiguration.setModuleMode(true);
+      }
+    });
+  }
+
+  @Staging
+  @Test
+  public void testShowCommandline() {
+    runPythonTest(new PyDebuggerTask("/debug", "test2.py") {
+      @Override
+      public void before() {
+        toggleBreakpoint(getFilePath(getScriptName()), 6);
+        setWaitForTermination(false);
+
+        myRunConfiguration.setShowCommandLineAfterwards(true);
+      }
+
+      @Override
+      public void testing() throws Exception {
+        waitForPause();
+        eval("z").hasValue("1");
+        resume();
+        consoleExec("z");
+        waitForOutput("2");
+      }
+
+      @Override
+      public void doFinally() {
+        myRunConfiguration.setShowCommandLineAfterwards(false);
+      }
+    });
+  }
+
+  @Staging
+  @Test
+  public void testShowCommandlineModule() {
+    runPythonTest(new PyDebuggerTask("/debug", "test2") {
+      @Override
+      public void before() {
+        toggleBreakpoint(getFilePath("test2.py"), 6);
+        setScriptName("test2");
+        setWaitForTermination(false);
+
+        myRunConfiguration.setShowCommandLineAfterwards(true);
+        myRunConfiguration.setModuleMode(true);
+      }
+
+      @Override
+      public void testing() throws Exception {
+        waitForPause();
+        eval("z").hasValue("1");
+        resume();
+        consoleExec("foo(3)");
+        waitForOutput("5");
+      }
+
+      @Override
+      public void doFinally() {
+        myRunConfiguration.setShowCommandLineAfterwards(false);
+        myRunConfiguration.setModuleMode(false);
       }
     });
   }

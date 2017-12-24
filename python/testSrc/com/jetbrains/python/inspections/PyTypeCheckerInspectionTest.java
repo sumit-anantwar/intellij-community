@@ -1,42 +1,23 @@
-/*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.python.inspections;
 
-import com.jetbrains.python.fixtures.PyTestCase;
+import com.jetbrains.python.fixtures.PyInspectionTestCase;
 import com.jetbrains.python.psi.LanguageLevel;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * @author vlan
  */
-public class PyTypeCheckerInspectionTest extends PyTestCase {
-  public static final String TEST_DIRECTORY = "inspections/PyTypeCheckerInspection/";
-
-  private void doTest() {
-    myFixture.copyDirectoryToProject("typing", "");
-    myFixture.configureByFile(TEST_DIRECTORY + getTestName(false) + ".py");
-    myFixture.enableInspections(PyTypeCheckerInspection.class);
-    myFixture.checkHighlighting(true, false, true);
+public class PyTypeCheckerInspectionTest extends PyInspectionTestCase {
+  @NotNull
+  @Override
+  protected Class<? extends PyInspection> getInspectionClass() {
+    return PyTypeCheckerInspection.class;
   }
 
-  private void doMultiFileTest() {
-    final String testName = getTestName(false);
-    myFixture.copyDirectoryToProject(TEST_DIRECTORY + testName, "");
-    myFixture.configureFromTempProjectFile("a.py");
-    myFixture.enableInspections(PyTypeCheckerInspection.class);
-    myFixture.checkHighlighting(true, false, false);
+  @Override
+  protected boolean isLowerCaseTestFile() {
+    return false;
   }
 
   public void testSimple() {
@@ -340,7 +321,7 @@ public class PyTypeCheckerInspectionTest extends PyTestCase {
   }
 
   // PY-20073
-  public void testMapArgumentsInOppositeOrder() {
+  public void testMapArgumentsInOppositeOrderPy2() {
     doTest();
   }
 
@@ -455,5 +436,23 @@ public class PyTypeCheckerInspectionTest extends PyTestCase {
   // PY-23864
   public void testClassObjectAndMetaclassCompatibility() {
     doTest();
+  }
+
+  // PY-21408
+  public void testCallableAgainstStructural() {
+    doTest();
+  }
+
+  public void testMatchingOpenFunctionCallTypesPy2() {
+    doMultiFileTest();
+  }
+
+  // PY-21408
+  public void testClassMetaAttrsAgainstStructural() {
+    runWithLanguageLevel(LanguageLevel.PYTHON30, this::doTest);
+  }
+
+  public void testCallableInstanceAgainstCallable() {
+    runWithLanguageLevel(LanguageLevel.PYTHON35, this::doTest);
   }
 }

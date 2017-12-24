@@ -31,13 +31,14 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.keymap.KeymapUtil;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.options.SearchableConfigurable;
+import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressIndicatorProvider;
-import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.codeStyle.MinusculeMatcher;
 import com.intellij.ui.*;
@@ -74,7 +75,6 @@ public class GotoActionModel implements ChooseByNameModel, Comparator<Object>, D
   @Nullable private final Project myProject;
   private final Component myContextComponent;
   @Nullable private final Editor myEditor;
-  @Nullable private final PsiFile myFile;
 
   protected final ActionManager myActionManager = ActionManager.getInstance();
 
@@ -94,15 +94,14 @@ public class GotoActionModel implements ChooseByNameModel, Comparator<Object>, D
 
   private final ModalityState myModality;
 
-  public GotoActionModel(@Nullable Project project, Component component, @Nullable Editor editor, @Nullable PsiFile file) {
-    this(project, component, editor, file, ModalityState.defaultModalityState());
+  public GotoActionModel(@Nullable Project project, Component component, @Nullable Editor editor) {
+    this(project, component, editor, ModalityState.defaultModalityState());
   }
 
-  public GotoActionModel(@Nullable Project project, Component component, @Nullable Editor editor, @Nullable PsiFile file, @Nullable ModalityState modalityState) {
+  public GotoActionModel(@Nullable Project project, Component component, @Nullable Editor editor, @Nullable ModalityState modalityState) {
     myProject = project;
     myContextComponent = component;
     myEditor = editor;
-    myFile = file;
     myModality = modalityState;
     ActionGroup mainMenu = (ActionGroup)myActionManager.getActionOrStub(IdeActions.GROUP_MAIN_MENU);
     assert mainMenu != null;
@@ -112,8 +111,9 @@ public class GotoActionModel implements ChooseByNameModel, Comparator<Object>, D
   @NotNull
   Map<String, ApplyIntentionAction> getAvailableIntentions() {
     Map<String, ApplyIntentionAction> map = new TreeMap<>();
-    if (myProject != null && myEditor != null && myFile != null) {
-      ApplyIntentionAction[] children = ApplyIntentionAction.getAvailableIntentions(myEditor, myFile);
+    if (myProject != null && !myProject.isDisposed() && myEditor != null && !myEditor.isDisposed()) {
+      PsiFile file = PsiDocumentManager.getInstance(myProject).getPsiFile(myEditor.getDocument());
+      ApplyIntentionAction[] children = file == null ? null : ApplyIntentionAction.getAvailableIntentions(myEditor, file);
       if (children != null) {
         for (ApplyIntentionAction action : children) {
           map.put(action.getName(), action);
@@ -262,7 +262,7 @@ public class GotoActionModel implements ChooseByNameModel, Comparator<Object>, D
     int emptyIconWidth = EMPTY_ICON.getIconWidth();
     int emptyIconHeight = EMPTY_ICON.getIconHeight();
     if (width <= emptyIconWidth && height <= emptyIconHeight) {
-      layeredIcon.setIcon(disabled ? IconLoader.getDisabledIcon(icon) : icon, 1, 
+      layeredIcon.setIcon(disabled && IconLoader.isGoodSize(icon) ? IconLoader.getDisabledIcon(icon) : icon, 1, 
                           (emptyIconWidth - width) / 2, 
                           (emptyIconHeight - height) / 2);
     }
@@ -311,6 +311,7 @@ public class GotoActionModel implements ChooseByNameModel, Comparator<Object>, D
     return settings + " > " + name;
   }
 
+  @NotNull
   Map<String, String> getConfigurablesNames() {
     return myConfigurablesNames.getValue();
   }
@@ -422,22 +423,23 @@ public class GotoActionModel implements ChooseByNameModel, Comparator<Object>, D
     return objects;
   }
 
-  void updateActions(List<ActionWrapper> toUpdate) {
-    Semaphore semaphore = new Semaphore(toUpdate.size());
+  private void updateOnEdt(Runnable update) {
+    Semaphore semaphore = new Semaphore(1);
     ProgressIndicator indicator = ProgressIndicatorProvider.getGlobalProgressIndicator();
-    for (ActionWrapper wrapper : toUpdate) {
-      ApplicationManager.getApplication().invokeLater(() -> {
-        try {
-          wrapper.getPresentation();
-        }
-        finally {
-          semaphore.up();
-        }
-      }, myModality, __ -> indicator != null && indicator.isCanceled());
-    }
+    ApplicationManager.getApplication().invokeLater(() -> {
+      try {
+        update.run();
+      }
+      finally {
+        semaphore.up();
+      }
+    }, myModality, __ -> indicator != null && indicator.isCanceled());
 
     while (!semaphore.waitFor(10)) {
-      ProgressManager.checkCanceled();
+      if (indicator != null && indicator.isCanceled()) {
+        // don't use `checkCanceled` because some smart devs might suppress PCE and end up with a deadlock like IDEA-177788
+        throw new ProcessCanceledException();
+      }
     }
   }
 
@@ -460,13 +462,15 @@ public class GotoActionModel implements ChooseByNameModel, Comparator<Object>, D
     @NotNull private final MatchMode myMode;
     @Nullable  private final String myGroupName;
     private final DataContext myDataContext;
+    private final GotoActionModel myModel;
     private volatile Presentation myPresentation;
 
-    public ActionWrapper(@NotNull AnAction action, @Nullable String groupName, @NotNull MatchMode mode, DataContext dataContext) {
+    public ActionWrapper(@NotNull AnAction action, @Nullable String groupName, @NotNull MatchMode mode, DataContext dataContext, GotoActionModel model) {
       myAction = action;
       myMode = mode;
       myGroupName = groupName;
       myDataContext = dataContext;
+      myModel = model;
     }
 
     @NotNull
@@ -499,12 +503,20 @@ public class GotoActionModel implements ChooseByNameModel, Comparator<Object>, D
     }
 
     public boolean isAvailable() {
-      return getPresentation().isEnabledAndVisible();
+      Presentation presentation = getPresentation();
+      return presentation != null && presentation.isEnabledAndVisible();
     }
 
     public Presentation getPresentation() {
       if (myPresentation != null) return myPresentation;
-      return myPresentation = updateActionBeforeShow(myAction, myDataContext).getPresentation();
+      Runnable r = () -> myPresentation = updateActionBeforeShow(myAction, myDataContext).getPresentation();
+      if (ApplicationManager.getApplication().isDispatchThread()) {
+        r.run();
+      } else {
+        myModel.updateOnEdt(r);
+      }
+
+      return myPresentation;
     }
 
     private boolean hasPresentation() {

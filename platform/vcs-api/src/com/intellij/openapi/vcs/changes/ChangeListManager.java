@@ -16,7 +16,7 @@
 
 package com.intellij.openapi.vcs.changes;
 
-import com.intellij.lifecycle.PeriodicalTasksCloser;
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vcs.AbstractVcs;
@@ -35,8 +35,8 @@ import java.util.List;
 
 public abstract class ChangeListManager implements ChangeListModification {
   @NotNull
-  public static ChangeListManager getInstance(Project project) {
-    return PeriodicalTasksCloser.getInstance().safeGetComponent(project, ChangeListManager.class);
+  public static ChangeListManager getInstance(@NotNull Project project) {
+    return project.getComponent(ChangeListManager.class);
   }
 
   public abstract void scheduleUpdate();
@@ -70,6 +70,11 @@ public abstract class ChangeListManager implements ChangeListModification {
   @NotNull
   public abstract Collection<Change> getAllChanges();
 
+  /**
+   *  Currently active change list.
+   *  @see #setDefaultChangeList(String)
+   *  @see #setDefaultChangeList(LocalChangeList)
+   */
   @NotNull
   public abstract LocalChangeList getDefaultChangeList();
 
@@ -131,6 +136,8 @@ public abstract class ChangeListManager implements ChangeListModification {
   @Nullable
   public abstract AbstractVcs getVcsFor(@NotNull Change change);
 
+
+  public abstract void addChangeListListener(@NotNull ChangeListListener listener, @NotNull Disposable disposable);
 
   public abstract void addChangeListListener(@NotNull ChangeListListener listener);
 

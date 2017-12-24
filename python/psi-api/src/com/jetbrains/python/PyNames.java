@@ -97,6 +97,7 @@ public class PyNames {
   public static final String NONE = "None";
   public static final String TRUE = "True";
   public static final String FALSE = "False";
+  public static final String ELLIPSIS = "...";
 
   public static final String TYPES_FUNCTION_TYPE = "types.FunctionType";
   public static final String TYPES_METHOD_TYPE = "types.UnboundMethodType";
@@ -210,6 +211,7 @@ public class PyNames {
   public static final String SLICE = "slice";
 
   public static final String KEYS = "keys";
+  public static final String APPEND = "append";
   public static final String EXTEND = "extend";
   public static final String UPDATE = "update";
 
@@ -570,7 +572,8 @@ public class PyNames {
   }
 
   // NOTE: includes unicode only good for py3k
-  private final static Pattern IDENTIFIER_PATTERN = Pattern.compile("\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*");
+  public static final String IDENTIFIER_RE = "\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*";
+  private final static Pattern IDENTIFIER_PATTERN = Pattern.compile(IDENTIFIER_RE);
 
   /**
    * TODO: dependency on language level.
@@ -650,7 +653,7 @@ public class PyNames {
 
   public static final ImmutableSet<String> PY3_ONLY_FUNCTION_SPECIAL_ATTRIBUTES = ImmutableSet.of("__annotations__", "__kwdefaults__");
 
-  public static final ImmutableSet<String> METHOD_SPECIAL_ATTRIBUTES = ImmutableSet.of("__func__", "__self__");
+  public static final ImmutableSet<String> METHOD_SPECIAL_ATTRIBUTES = ImmutableSet.of("__func__", "__self__", "__name__");
 
   public static final ImmutableSet<String> LEGACY_METHOD_SPECIAL_ATTRIBUTES = ImmutableSet.of("im_func", "im_self", "im_class");
 

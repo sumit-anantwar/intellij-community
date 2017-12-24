@@ -15,7 +15,6 @@
  */
 package org.jetbrains.plugins.gradle.importing;
 
-import com.intellij.compiler.server.BuildManager;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.application.Result;
 import com.intellij.openapi.application.WriteAction;
@@ -36,7 +35,6 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.testFramework.IdeaTestUtil;
 import com.intellij.util.PathUtil;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.io.PathKt;
 import org.gradle.StartParameter;
 import org.gradle.util.GradleVersion;
 import org.gradle.wrapper.GradleWrapperMain;
@@ -118,19 +116,19 @@ public abstract class GradleImportingTestCase extends ExternalSystemImportingTes
       //super.setUp() wasn't called
       return;
     }
-
-    try {
+    Sdk jdk = ProjectJdkTable.getInstance().findJdk(GRADLE_JDK_NAME);
+    if(jdk != null) {
       new WriteAction() {
         @Override
         protected void run(@NotNull Result result) {
-          Sdk old = ProjectJdkTable.getInstance().findJdk(GRADLE_JDK_NAME);
-          if (old != null) {
-            SdkConfigurationUtil.removeSdk(old);
-          }
+          ProjectJdkTable.getInstance().removeJdk(jdk);
         }
       }.execute();
+    }
+
+    try {
       Messages.setTestDialog(TestDialog.DEFAULT);
-      PathKt.delete(BuildManager.getInstance().getBuildSystemDirectory());
+      deleteBuildSystemDirectory();
     }
     finally {
       super.tearDown();

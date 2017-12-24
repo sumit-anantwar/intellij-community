@@ -262,9 +262,10 @@ public class MessageBusImpl implements MessageBus {
   @Override
   public void dispose() {
     checkNotDisposed();
+    myDisposed = true;
 
     for (MessageBusImpl childBus : myChildBuses) {
-      childBus.dispose();
+      Disposer.dispose(childBus);
     }
 
     Disposer.dispose(myConnectionDisposable);
@@ -280,7 +281,11 @@ public class MessageBusImpl implements MessageBus {
     else {
       asRoot().myWaitingBuses.remove();
     }
-    myDisposed = true;
+  }
+
+  @Override
+  public boolean isDisposed() {
+    return myDisposed;
   }
 
   @Override
@@ -296,7 +301,8 @@ public class MessageBusImpl implements MessageBus {
   }
 
   private boolean isDispatchingAnything() {
-    return getRootBus().myWaitingBuses.get() != null;
+    SortedMap<MessageBusImpl, Integer> waitingBuses = getRootBus().myWaitingBuses.get();
+    return waitingBuses != null && !waitingBuses.isEmpty();
   }
 
   private void checkNotDisposed() {

@@ -1,18 +1,6 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o.
+// Use of this source code is governed by the Apache 2.0 license that can be
+// found in the LICENSE file.
 package com.intellij.psi.impl;
 
 import com.intellij.lang.ASTNode;
@@ -23,6 +11,7 @@ import com.intellij.openapi.application.ex.ApplicationEx;
 import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.event.DocumentEvent;
 import com.intellij.openapi.editor.ex.DocumentEx;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressIndicator;
@@ -323,8 +312,7 @@ public class DocumentCommitThread implements Runnable, Disposable, DocumentCommi
   public void run() {
     while (!isDisposed) {
       try {
-        boolean polled = pollQueue();
-        if (!polled) break;
+        if (!pollQueue()) break;
       }
       catch(Throwable e) {
         LOG.error(e);
@@ -501,6 +489,7 @@ public class DocumentCommitThread implements Runnable, Disposable, DocumentCommi
     final Project project = task.project;
     final PsiDocumentManagerBase documentManager = (PsiDocumentManagerBase)PsiDocumentManager.getInstance(project);
     final List<Processor<Document>> finishProcessors = new SmartList<>();
+    Ref<ProperTextRange> changedRange = new Ref<>();
     Runnable runnable = () -> {
       myApplication.assertReadAccessAllowed();
       if (project.isDisposed()) return;
@@ -530,7 +519,7 @@ public class DocumentCommitThread implements Runnable, Disposable, DocumentCommi
           PsiFileImpl file = pair.first;
           if (file.isValid()) {
             FileASTNode oldFileNode = pair.second;
-            Processor<Document> finishProcessor = doCommit(task, file, oldFileNode);
+            Processor<Document> finishProcessor = doCommit(task, file, oldFileNode, changedRange);
             if (finishProcessor != null) {
               finishProcessors.add(finishProcessor);
             }
@@ -566,14 +555,16 @@ public class DocumentCommitThread implements Runnable, Disposable, DocumentCommi
       return new Pair<>(null, "Indicator was canceled");
     }
 
-    Runnable result = createEdtRunnable(task, synchronously, finishProcessors);
+    ProperTextRange range = changedRange.isNull() ? ProperTextRange.create(0, document.getTextLength()) : changedRange.get();
+    Runnable result = createEdtRunnable(task, synchronously, finishProcessors, range);
     return Pair.create(result, null);
   }
 
   @NotNull
   private Runnable createEdtRunnable(@NotNull final CommitTask task,
                                      final boolean synchronously,
-                                     @NotNull final List<Processor<Document>> finishProcessors) {
+                                     @NotNull final List<Processor<Document>> finishProcessors,
+                                     @NotNull ProperTextRange changedRange) {
     return () -> {
       myApplication.assertIsDispatchThread();
       Document document = task.getDocument();
@@ -589,7 +580,7 @@ public class DocumentCommitThread implements Runnable, Disposable, DocumentCommi
       }
 
       boolean changeStillValid = task.isStillValid();
-      boolean success = changeStillValid && documentManager.finishCommit(document, finishProcessors, synchronously, task.reason);
+      boolean success = changeStillValid && documentManager.finishCommit(document, finishProcessors, changedRange, synchronously, task.reason);
       if (synchronously) {
         assert success;
       }
@@ -731,16 +722,20 @@ public class DocumentCommitThread implements Runnable, Disposable, DocumentCommi
   }
 
   // public for Upsource
-  @Nullable("returns runnable to execute under write action in AWT to finish the commit")
+  // returns runnable to execute under write action in AWT to finish the commit, updates "outChangedRange"
+  @Nullable
   public Processor<Document> doCommit(@NotNull final CommitTask task,
                                       @NotNull final PsiFile file,
-                                      @NotNull final FileASTNode oldFileNode) {
+                                      @NotNull final FileASTNode oldFileNode,
+                                      @NotNull Ref<ProperTextRange> outChangedRange) {
     Document document = task.getDocument();
     final CharSequence newDocumentText = document.getImmutableCharSequence();
-    final TextRange changedPsiRange = getChangedPsiRange(file, task.myLastCommittedText, newDocumentText);
+    ProperTextRange changedPsiRange = getChangedPsiRange(file, task, newDocumentText);
     if (changedPsiRange == null) {
       return null;
     }
+
+    outChangedRange.set(outChangedRange.get() == null ? changedPsiRange : outChangedRange.get().union(changedPsiRange));
 
     final Boolean data = document.getUserData(BlockSupport.DO_NOT_REPARSE_INCREMENTALLY);
     if (data != null) {
@@ -768,7 +763,7 @@ public class DocumentCommitThread implements Runnable, Disposable, DocumentCommi
                   "; viewProvider=" + viewProvider + " of " + viewProvider.getClass() +
                   "; language=" + file.getLanguage() +
                   "; vFile=" + vFile + " of " + vFile.getClass() +
-                  "; free-threaded=" + SingleRootFileViewProvider.isFreeThreaded(viewProvider));
+                  "; free-threaded=" + AbstractFileViewProvider.isFreeThreaded(viewProvider));
       }
 
       doActualPsiChange(file, diffLog);
@@ -834,37 +829,55 @@ public class DocumentCommitThread implements Runnable, Disposable, DocumentCommi
   }
 
   @Nullable
-  private static TextRange getChangedPsiRange(@NotNull PsiFile file,
-                                              @NotNull CharSequence oldDocumentText,
-                                              @NotNull CharSequence newDocumentText) {
+  private static ProperTextRange getChangedPsiRange(@NotNull PsiFile file,
+                                                    @NotNull CommitTask task,
+                                                    @NotNull CharSequence newDocumentText) {
+    CharSequence oldDocumentText = task.myLastCommittedText;
     int psiLength = oldDocumentText.length();
     if (!file.getViewProvider().supportsIncrementalReparse(file.getLanguage())) {
-      return new TextRange(0, psiLength);
+      return new ProperTextRange(0, psiLength);
     }
-
-    int commonPrefixLength = StringUtil.commonPrefixLength(oldDocumentText, newDocumentText);
-    if (commonPrefixLength == newDocumentText.length() && newDocumentText.length() == psiLength) {
+    List<DocumentEvent> events = ((PsiDocumentManagerBase)PsiDocumentManager.getInstance(file.getProject())).getEventsSinceCommit(task.document);
+    int prefix = Integer.MAX_VALUE;
+    int suffix = Integer.MAX_VALUE;
+    int lengthBeforeEvent = psiLength;
+    for (DocumentEvent event : events) {
+      prefix = Math.min(prefix, event.getOffset());
+      suffix = Math.min(suffix, lengthBeforeEvent - event.getOffset() - event.getOldLength());
+      lengthBeforeEvent = lengthBeforeEvent - event.getOldLength() + event.getNewLength();
+    }
+    if ((prefix == psiLength || suffix == psiLength) && newDocumentText.length() == psiLength) {
       return null;
     }
-
-    int commonSuffixLength = Math.min(StringUtil.commonSuffixLength(oldDocumentText, newDocumentText), psiLength - commonPrefixLength);
-    return new TextRange(commonPrefixLength, psiLength - commonSuffixLength);
+    //Important! delete+insert sequence can give some of same chars back, lets grow affixes to include them.
+    int shortestLength = Math.min(psiLength, newDocumentText.length());
+    while (prefix < shortestLength &&
+           oldDocumentText.charAt(prefix) == newDocumentText.charAt(prefix)) {
+      prefix++;
+    }
+    while (suffix < shortestLength - prefix &&
+           oldDocumentText.charAt(psiLength - suffix - 1) == newDocumentText.charAt(newDocumentText.length() - suffix - 1)) {
+      suffix++;
+    }
+    int end = Math.max(prefix, psiLength - suffix);
+    if (end == prefix && newDocumentText.length() == oldDocumentText.length()) return null;
+    return ProperTextRange.create(prefix, end);
   }
 
   public static void doActualPsiChange(@NotNull final PsiFile file, @NotNull final DiffLog diffLog) {
     CodeStyleManager.getInstance(file.getProject()).performActionWithFormatterDisabled((Runnable)() -> {
-      PsiFileImpl fileImpl = (PsiFileImpl)file;
-      synchronized (fileImpl.getFilePsiLock()) {
-        file.getViewProvider().beforeContentsSynchronized();
+      FileViewProvider viewProvider = file.getViewProvider();
+      synchronized (((AbstractFileViewProvider)viewProvider).getFilePsiLock()) {
+        viewProvider.beforeContentsSynchronized();
 
-        final Document document = file.getViewProvider().getDocument();
+        final Document document = viewProvider.getDocument();
         PsiDocumentManagerBase documentManager = (PsiDocumentManagerBase)PsiDocumentManager.getInstance(file.getProject());
         PsiToDocumentSynchronizer.DocumentChangeTransaction transaction = documentManager.getSynchronizer().getTransaction(document);
 
         if (transaction == null) {
-          final PomModel model = PomManager.getModel(fileImpl.getProject());
+          final PomModel model = PomManager.getModel(file.getProject());
 
-          model.runTransaction(new PomTransactionBase(fileImpl, model.getModelAspect(TreeAspect.class)) {
+          model.runTransaction(new PomTransactionBase(file, model.getModelAspect(TreeAspect.class)) {
             @Override
             public PomModelEvent runInner() {
               return new TreeAspectEvent(model, diffLog.performActualPsiChange(file));

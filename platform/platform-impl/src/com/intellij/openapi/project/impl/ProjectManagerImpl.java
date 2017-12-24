@@ -254,7 +254,7 @@ public class ProjectManagerImpl extends ProjectManagerEx implements Disposable {
 
     if (getLeakedProjectsCount() >= MAX_LEAKY_PROJECTS) {
       System.gc();
-      List<Project> copy = getLeakedProjects();
+      Collection<Project> copy = getLeakedProjects();
       myProjects.clear();
       if (ContainerUtil.collect(copy.iterator()).size() >= MAX_LEAKY_PROJECTS) {
         throw new TooManyProjectLeakedException(copy);
@@ -263,7 +263,7 @@ public class ProjectManagerImpl extends ProjectManagerEx implements Disposable {
   }
 
   @TestOnly
-  private List<Project> getLeakedProjects() {
+  private Collection<Project> getLeakedProjects() {
     myProjects.remove(getDefaultProject()); // process queue
     return myProjects.keySet().stream().filter(project -> project.isDisposed() && !((ProjectImpl)project).isTemporarilyDisposed()).collect(Collectors.toCollection(UnsafeWeakList::new));
   }
@@ -276,6 +276,7 @@ public class ProjectManagerImpl extends ProjectManagerEx implements Disposable {
   private void initProject(@NotNull ProjectImpl project, @Nullable Project template) {
     ProgressIndicator indicator = myProgressManager.getProgressIndicator();
     if (indicator != null && !project.isDefault()) {
+      indicator.setIndeterminate(false);
       indicator.setText(ProjectBundle.message("loading.components.for", project.getName()));
     }
 
@@ -429,9 +430,11 @@ public class ProjectManagerImpl extends ProjectManagerEx implements Disposable {
     };
 
     if (!loadProjectUnderProgress(project, process)) {
-      closeProject(project, false, false, false, true);
-      WriteAction.run(() -> Disposer.dispose(project));
-      notifyProjectOpenFailed();
+      GuiUtils.invokeLaterIfNeeded(() -> {
+        closeProject(project, false, false, false, true);
+        WriteAction.run(() -> Disposer.dispose(project));
+        notifyProjectOpenFailed();
+      }, ModalityState.defaultModalityState());
       return false;
     }
 

@@ -1,38 +1,29 @@
 /*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
  */
 package com.intellij.testFramework;
 
+import com.intellij.concurrency.IdeaForkJoinWorkerThreadFactory;
 import com.intellij.concurrency.JobSchedulerImpl;
 import com.intellij.execution.ExecutionException;
 import com.intellij.execution.configurations.GeneralCommandLine;
+import com.intellij.execution.process.ProcessIOExecutorService;
 import com.intellij.execution.process.ProcessOutput;
 import com.intellij.execution.util.ExecUtil;
 import com.intellij.ide.DataManager;
 import com.intellij.ide.IdeEventQueue;
 import com.intellij.ide.fileTemplates.FileTemplateManager;
 import com.intellij.ide.fileTemplates.impl.FileTemplateManagerImpl;
-import com.intellij.ide.util.treeView.AbstractTreeNode;
-import com.intellij.ide.util.treeView.AbstractTreeStructure;
+import com.intellij.ide.util.treeView.*;
 import com.intellij.idea.Bombed;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
+import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.PathManager;
+import com.intellij.openapi.application.impl.ApplicationImpl;
 import com.intellij.openapi.application.impl.LaterInvocator;
 import com.intellij.openapi.components.ServiceKt;
 import com.intellij.openapi.components.impl.stores.StoreUtil;
@@ -59,6 +50,8 @@ import com.intellij.openapi.vfs.ex.temp.TempFileSystem;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiRecursiveElementWalkingVisitor;
 import com.intellij.psi.PsiReference;
+import com.intellij.rt.execution.junit.FileComparisonFailure;
+import com.intellij.ui.tree.AsyncTreeModel;
 import com.intellij.util.*;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.concurrency.AppScheduledExecutorService;
@@ -66,15 +59,19 @@ import com.intellij.util.containers.HashMap;
 import com.intellij.util.io.ZipUtil;
 import com.intellij.util.ref.GCUtil;
 import com.intellij.util.ui.UIUtil;
+import com.intellij.util.ui.tree.TreeUtil;
 import gnu.trove.Equality;
 import junit.framework.AssertionFailedError;
 import org.jdom.Element;
 import org.jdom.JDOMException;
 import org.jetbrains.annotations.*;
+import org.jetbrains.concurrency.AsyncPromise;
+import org.jetbrains.concurrency.Promise;
 import org.junit.Assert;
 
 import javax.swing.*;
 import javax.swing.tree.DefaultMutableTreeNode;
+import javax.swing.tree.TreeModel;
 import javax.swing.tree.TreePath;
 import java.awt.*;
 import java.awt.event.InvocationEvent;
@@ -82,10 +79,12 @@ import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.lang.reflect.Method;
 import java.nio.charset.Charset;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.jar.JarFile;
@@ -192,22 +191,22 @@ public class PlatformTestUtil {
                                 boolean withSelection,
                                 @Nullable Queryable.PrintInfo printInfo,
                                 @Nullable Condition<String> nodePrintCondition) {
-    DefaultMutableTreeNode defaultMutableTreeNode = (DefaultMutableTreeNode)root;
+    DefaultMutableTreeNode dmt = (DefaultMutableTreeNode)root;
 
-    final Object userObject = defaultMutableTreeNode.getUserObject();
+    Object userObject = dmt.getUserObject();
     String nodeText = toString(userObject, printInfo);
 
     if (nodePrintCondition != null && !nodePrintCondition.value(nodeText)) return;
 
-    final StringBuilder buff = new StringBuilder();
+    StringBuilder buff = new StringBuilder();
     StringUtil.repeatSymbol(buff, ' ', level);
 
-    final boolean expanded = tree.isExpanded(new TreePath(defaultMutableTreeNode.getPath()));
-    if (!defaultMutableTreeNode.isLeaf()) {
+    boolean expanded = tree.isExpanded(new TreePath(dmt.getPath()));
+    if (!dmt.isLeaf() && (tree.isRootVisible() || dmt != tree.getModel().getRoot() || dmt.getChildCount() > 0)) {
       buff.append(expanded ? "-" : "+");
     }
 
-    final boolean selected = tree.getSelectionModel().isPathSelected(new TreePath(defaultMutableTreeNode.getPath()));
+    boolean selected = tree.getSelectionModel().isPathSelected(new TreePath(dmt.getPath()));
     if (withSelection && selected) {
       buff.append("[");
     }
@@ -241,6 +240,77 @@ public class PlatformTestUtil {
   public static void assertTreeEqual(JTree tree, String expected, boolean checkSelected) {
     String treeStringPresentation = print(tree, checkSelected);
     Assert.assertEquals(expected, treeStringPresentation);
+  }
+
+  @TestOnly
+  public static void expand(JTree tree, int... rows) {
+    for (int row : rows) {
+      tree.expandRow(row);
+      waitWhileBusy(tree);
+    }
+  }
+
+  @TestOnly
+  public static void expandAll(JTree tree) {
+    waitForPromise(TreeUtil.promiseExpandAll(tree));
+  }
+
+  private static boolean isBusy(JTree tree) {
+    UIUtil.dispatchAllInvocationEvents();
+    TreeModel model = tree.getModel();
+    if (model instanceof AsyncTreeModel) {
+      AsyncTreeModel async = (AsyncTreeModel)model;
+      if (async.isProcessing()) return true;
+      UIUtil.dispatchAllInvocationEvents();
+      return async.isProcessing();
+    }
+    AbstractTreeBuilder builder = AbstractTreeBuilder.getBuilderFor(tree);
+    if (builder == null) return false;
+    AbstractTreeUi ui = builder.getUi();
+    if (ui == null) return false;
+    return ui.hasPendingWork();
+  }
+
+  @TestOnly
+  public static void waitWhileBusy(JTree tree) {
+    assert EventQueue.isDispatchThread();
+    long millis = 10000L + System.currentTimeMillis();
+    while (isBusy(tree)) {
+      assert millis > System.currentTimeMillis() : "The tree is busy too long... aborting";
+    }
+  }
+
+  @TestOnly
+  public static void waitForCallback(@NotNull ActionCallback callback) {
+    AsyncPromise<?> promise = new AsyncPromise<>();
+    callback.doWhenDone(() -> promise.setResult(null));
+    waitForPromise(promise);
+  }
+
+  @TestOnly
+  @Nullable
+  public static <T> T waitForPromise(@NotNull Promise<T> promise) {
+    Application app = ApplicationManager.getApplication();
+    assert !app.isWriteAccessAllowed() : "It's a bad idea to wait for a promise under the write action. Somebody creates an alarm which requires read action and you are deadlocked.";
+    assert app.isDispatchThread();
+    AtomicBoolean complete = new AtomicBoolean(false);
+    promise.processed(ignore -> complete.set(true));
+    T result = null;
+    long start = System.currentTimeMillis();
+    do {
+      UIUtil.dispatchAllInvocationEvents();
+      try {
+        result = promise.blockingGet(20, TimeUnit.MILLISECONDS);
+      }
+      catch (Exception ignore) {
+      }
+      if (System.currentTimeMillis() - start > 100 * 1000) {
+        throw new AssertionError("The promise takes too long... aborting");
+      }
+    }
+    while (!complete.get());
+    UIUtil.dispatchAllInvocationEvents();
+    return result;
   }
 
   @TestOnly
@@ -437,15 +507,45 @@ public class PlatformTestUtil {
     return print(tree, false);
   }
 
-  public static void updateRecursively(@NotNull AbstractTreeNode<?> node) {
-    node.update();
-    for (AbstractTreeNode child : node.getChildren()) {
-      updateRecursively(child);
-    }
+  public static void assertTreeStructureEquals(@NotNull TreeModel treeModel, @NotNull String expected) {
+    Assert.assertEquals(expected.trim(), print(createStructure(treeModel), treeModel.getRoot(), 0, null, -1, ' ', (Queryable.PrintInfo)null).toString().trim());
   }
 
-  public static void assertTreeStructureEquals(@NotNull AbstractTreeStructure treeStructure, @NotNull String expected) {
-    Assert.assertEquals(expected.trim(), print(treeStructure, treeStructure.getRootElement(), 0, null, -1, ' ', (Queryable.PrintInfo)null).toString().trim());
+  @NotNull
+  protected static AbstractTreeStructure createStructure(@NotNull TreeModel treeModel) {
+    return new AbstractTreeStructure() {
+      @Override
+      public Object getRootElement() {
+        return treeModel.getRoot();
+      }
+
+      @Override
+      public Object[] getChildElements(Object element) {
+        return TreeUtil.nodeChildren(element, treeModel).toList().toArray();
+      }
+
+      @Nullable
+      @Override
+      public Object getParentElement(Object element) {
+        return ((AbstractTreeNode)element).getParent();
+      }
+
+      @NotNull
+      @Override
+      public NodeDescriptor createDescriptor(Object element, NodeDescriptor parentDescriptor) {
+        throw new UnsupportedOperationException();
+      }
+
+      @Override
+      public void commit() {
+        throw new UnsupportedOperationException();
+      }
+
+      @Override
+      public boolean hasSomethingToCommit() {
+        throw new UnsupportedOperationException();
+      }
+    };
   }
 
   public static void invokeNamedAction(final String actionId) {
@@ -549,6 +649,11 @@ public class PlatformTestUtil {
     private boolean adjustForCPU = true;  // true if test uses CPU, timings need to be re-calibrated according to this agent CPU speed
     private boolean useLegacyScaling;
 
+    static {
+      // to use JobSchedulerImpl.getJobPoolParallelism() in tests which don't init application
+      IdeaForkJoinWorkerThreadFactory.setupForkJoinCommonPool();
+    }
+
     private TestInfo(@NotNull ThrowableRunnable test, int expectedMs, @NotNull String what) {
       this.test = test;
       this.expectedMs = expectedMs;
@@ -620,7 +725,7 @@ public class PlatformTestUtil {
 
         int expectedOnMyMachine = expectedMs;
         if (adjustForCPU) {
-          int coreCountUsedHere = usedReferenceCpuCores < 8 ? Math.min(JobSchedulerImpl.CORES_COUNT, usedReferenceCpuCores) : JobSchedulerImpl.CORES_COUNT;
+          int coreCountUsedHere = usedReferenceCpuCores < 8 ? Math.min(JobSchedulerImpl.getJobPoolParallelism(), usedReferenceCpuCores) : JobSchedulerImpl.getJobPoolParallelism();
           expectedOnMyMachine *= usedReferenceCpuCores;
           expectedOnMyMachine = adjust(expectedOnMyMachine, Timings.CPU_TIMING, Timings.REFERENCE_CPU_TIMING, useLegacyScaling);
           expectedOnMyMachine /= coreCountUsedHere;
@@ -846,7 +951,9 @@ public class PlatformTestUtil {
                        : LoadTextUtil.getTextByBinaryPresentation(fileAfter.contentsToByteArray(false), fileAfter).toString();
 
       if (textA != null && textB != null) {
-        Assert.assertEquals(fileAfter.getPath(), textA, textB);
+        if (!StringUtil.equals(textA, textB)) {
+          throw new FileComparisonFailure("Text mismatch in file " + fileBefore.getName(), textA, textB, fileAfter.getPath());
+        }
       }
       else {
         Assert.assertArrayEquals(fileAfter.getPath(), fileAfter.contentsToByteArray(), fileBefore.contentsToByteArray());
@@ -1013,6 +1120,63 @@ public class PlatformTestUtil {
     }
     ourProjectCleanups.clear();
   }
+
+  /**
+   * Disposes the application (it also stops some application-related threads)
+   * and checks for project leaks.
+   */
+  public static void disposeApplicationAndCheckForProjectLeaks() {
+    EdtTestUtil.runInEdtAndWait(() -> {
+      try {
+        LightPlatformTestCase.initApplication(); // in case nobody cared to init. LightPlatformTestCase.disposeApplication() would not work otherwise.
+      }
+      catch (RuntimeException e) {
+        throw e;
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+
+      cleanupAllProjects();
+
+      ApplicationImpl application = (ApplicationImpl)ApplicationManager.getApplication();
+      System.out.println(application.writeActionStatistics());
+      System.out.println(ActionUtil.ActionPauses.STAT.statistics());
+      System.out.println(((AppScheduledExecutorService)AppExecutorUtil.getAppScheduledExecutorService()).statistics());
+      System.out.println("ProcessIOExecutorService threads created: " + ((ProcessIOExecutorService)ProcessIOExecutorService.INSTANCE).getThreadCounter());
+
+      try {
+        LeakHunter.checkNonDefaultProjectLeak();
+      }
+      catch (AssertionError | Exception e) {
+        captureMemorySnapshot();
+        ExceptionUtil.rethrowAllAsUnchecked(e);
+      }
+      finally {
+        application.setDisposeInProgress(true);
+        LightPlatformTestCase.disposeApplication();
+        UIUtil.dispatchAllInvocationEvents();
+      }
+    });
+
+  }
+  
+  public static void captureMemorySnapshot() {
+    try {
+      Method snapshot = ReflectionUtil.getMethod(Class.forName("com.intellij.util.ProfilingUtil"), "captureMemorySnapshot");
+      if (snapshot != null) {
+        Object path = snapshot.invoke(null);
+        System.out.println("Memory snapshot captured to '" + path + "'");
+      }
+    }
+    catch (ClassNotFoundException e) {
+      // ProfilingUtil is missing from the classpath, ignore
+    }
+    catch (Exception e) {
+      e.printStackTrace(System.err);
+    }
+  }
+
 
   public static <T> void assertComparisonContractNotViolated(@NotNull List<T> values,
                                                              @NotNull Comparator<T> comparator,

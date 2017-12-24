@@ -56,8 +56,6 @@ import java.util.List;
 
 /**
  * @author Eugene Zhuravlev
- *         Date: Oct 4, 2003
- *         Time: 6:29:56 PM
  */
 @SuppressWarnings({"AssignmentToStaticFieldFromInstanceMethod"})
 public abstract class ModuleEditor implements Place.Navigator, Disposable {
@@ -233,8 +231,8 @@ public abstract class ModuleEditor implements Place.Navigator, Disposable {
   }
 
   private static ModuleConfigurationEditorProvider[] collectProviders(@NotNull Module module) {
-    List<ModuleConfigurationEditorProvider> result = new ArrayList<>();
-    result.addAll(ServiceKt.getComponents(module, ModuleConfigurationEditorProvider.class));
+    List<ModuleConfigurationEditorProvider> result =
+      new ArrayList<>(ServiceKt.getComponents(module, ModuleConfigurationEditorProvider.class));
     for (ModuleConfigurationEditorProvider component : result) {
       reportDeprecatedModuleEditor(component.getClass());
     }

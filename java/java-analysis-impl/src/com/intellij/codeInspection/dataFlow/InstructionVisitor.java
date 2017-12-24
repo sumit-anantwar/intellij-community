@@ -19,6 +19,7 @@ import com.intellij.codeInspection.dataFlow.instructions.*;
 import com.intellij.codeInspection.dataFlow.value.DfaUnknownValue;
 import com.intellij.codeInspection.dataFlow.value.DfaValue;
 import com.intellij.codeInspection.dataFlow.value.DfaVariableValue;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 
@@ -35,6 +36,17 @@ public abstract class InstructionVisitor {
 
   public DfaInstructionState[] visitCheckNotNull(CheckNotNullInstruction instruction, DataFlowRunner runner, DfaMemoryState memState) {
     return nextInstruction(instruction, runner, memState);
+  }
+
+  @NotNull
+  public DfaInstructionState[] visitControlTransfer(@NotNull ControlTransferInstruction controlTransferInstruction,
+                                                    @NotNull DataFlowRunner runner, @NotNull DfaMemoryState state) {
+    DfaControlTransferValue transferValue = controlTransferInstruction.getTransfer();
+    if (transferValue == null) {
+      transferValue = (DfaControlTransferValue)state.pop();
+    }
+    return new ControlTransferHandler(state, runner, transferValue.getTarget()).iteration(transferValue.getTraps())
+      .toArray(DfaInstructionState.EMPTY_ARRAY);
   }
 
   protected static DfaInstructionState[] nextInstruction(Instruction instruction, DataFlowRunner runner, DfaMemoryState memState) {
@@ -85,13 +97,12 @@ public abstract class InstructionVisitor {
       return nextInstruction(instruction, runner, memState);
     }
 
-    ArrayList<DfaInstructionState> result = new ArrayList<>();
+    ArrayList<DfaInstructionState> result = new ArrayList<>(2);
 
-    DfaMemoryState thenState = memState.createCopy();
     DfaMemoryState elseState = memState.createCopy();
 
-    if (thenState.applyCondition(condTrue)) {
-      result.add(new DfaInstructionState(runner.getInstruction(instruction.getOffset()), thenState));
+    if (memState.applyCondition(condTrue)) {
+      result.add(new DfaInstructionState(runner.getInstruction(instruction.getOffset()), memState));
       markBranchReachable(instruction, true);
     }
 
@@ -100,7 +111,7 @@ public abstract class InstructionVisitor {
       markBranchReachable(instruction, false);
     }
 
-    return result.toArray(new DfaInstructionState[result.size()]);
+    return result.toArray(DfaInstructionState.EMPTY_ARRAY);
   }
 
   private static void markBranchReachable(ConditionalGotoInstruction instruction, boolean isTrueBranch) {
@@ -118,7 +129,7 @@ public abstract class InstructionVisitor {
     return nextInstruction(instruction, runner, memState);
   }
 
-  public DfaInstructionState[] visitFieldReference(FieldReferenceInstruction instruction, DataFlowRunner runner, DfaMemoryState memState) {
+  public DfaInstructionState[] visitFieldReference(DereferenceInstruction instruction, DataFlowRunner runner, DfaMemoryState memState) {
     memState.pop();
     return nextInstruction(instruction, runner, memState);
   }
@@ -128,7 +139,9 @@ public abstract class InstructionVisitor {
     if (variable != null) {
       if (instruction.isDependentsOnly()) {
         for (DfaVariableValue qualified : runner.getFactory().getVarFactory().getAllQualifiedBy(variable)) {
-          memState.flushVariable(qualified);
+          if (qualified.isFlushableByCalls()) {
+            memState.flushVariable(qualified);
+          }
         }
       }
       else {

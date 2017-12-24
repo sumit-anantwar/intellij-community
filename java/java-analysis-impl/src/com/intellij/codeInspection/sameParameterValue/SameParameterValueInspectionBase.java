@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInspection.sameParameterValue;
 
 import com.intellij.analysis.AnalysisScope;
@@ -63,7 +49,7 @@ public class SameParameterValueInspectionBase extends GlobalJavaBatchInspectionT
         if (value != null) {
           if (!globalContext.shouldCheck(refParameter, this)) continue;
           if (problems == null) problems = new ArrayList<>(1);
-          problems.add(registerProblem(manager, refParameter.getElement(), value));
+          problems.add(registerProblem(manager, refParameter.getElement(), value, refParameter.isUsedForWriting()));
         }
       }
     }
@@ -140,7 +126,7 @@ public class SameParameterValueInspectionBase extends GlobalJavaBatchInspectionT
     return new LocalSameParameterValueInspection(this);
   }
 
-  private class LocalSameParameterValueInspection extends BaseJavaLocalInspectionTool {
+  private class LocalSameParameterValueInspection extends AbstractBaseJavaLocalInspectionTool {
     private static final String NOT_CONST = "_NOT_CONST";
 
     private final SameParameterValueInspectionBase myGlobal;
@@ -242,7 +228,7 @@ public class SameParameterValueInspectionBase extends GlobalJavaBatchInspectionT
             for (int i = 0, length = paramValues.length; i < length; i++) {
               String value = paramValues[i];
               if (value != null && value != NOT_CONST) {
-                holder.registerProblem(registerProblem(holder.getManager(), parameters[i], value));
+                holder.registerProblem(registerProblem(holder.getManager(), parameters[i], value, false));
               }
             }
           }
@@ -257,13 +243,14 @@ public class SameParameterValueInspectionBase extends GlobalJavaBatchInspectionT
 
   private ProblemDescriptor registerProblem(@NotNull InspectionManager manager,
                                             PsiParameter parameter,
-                                            String value) {
+                                            String value,
+                                            boolean usedForWriting) {
     final String name = parameter.getName();
     return manager.createProblemDescriptor(ObjectUtils.notNull(parameter.getNameIdentifier(), parameter),
                                            InspectionsBundle.message("inspection.same.parameter.problem.descriptor",
                                                                      "<code>" + name + "</code>",
                                                                      "<code>" + StringUtil.unquoteString(value) + "</code>"),
-                                           createFix(name, value),
+                                           usedForWriting ? null : createFix(name, value),
                                            ProblemHighlightType.GENERIC_ERROR_OR_WARNING, false);
   }
 }

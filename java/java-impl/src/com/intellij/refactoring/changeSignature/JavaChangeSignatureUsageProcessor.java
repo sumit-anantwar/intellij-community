@@ -24,6 +24,7 @@ import com.intellij.codeInspection.dataFlow.ControlFlowAnalyzer;
 import com.intellij.lang.StdLanguages;
 import com.intellij.lang.java.JavaLanguage;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Ref;
@@ -351,9 +352,8 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
         PsiElementFactory elementFactory = JavaPsiFacade.getElementFactory(ref.getProject());
         PsiTryStatement tryStatement = (PsiTryStatement)elementFactory.createStatementFromText("try {} catch (Exception e) {}", null);
         PsiStatement anchor;
-        PsiElement lambdaBody = context instanceof PsiLambdaExpression ? ((PsiLambdaExpression)context).getBody() : null;
-        if (lambdaBody instanceof PsiExpression) {
-          PsiCodeBlock codeBlock = (PsiCodeBlock)((PsiLambdaExpression)RefactoringUtil.expandExpressionLambdaToCodeBlock(lambdaBody)).getBody();
+        if (context instanceof PsiLambdaExpression) {
+          PsiCodeBlock codeBlock = RefactoringUtil.expandExpressionLambdaToCodeBlock((PsiLambdaExpression)context);
           LOG.assertTrue(codeBlock != null);
           anchor = codeBlock.getStatements()[0];
         }
@@ -1140,7 +1140,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
     }
 
     public static void searchForHierarchyConflicts(PsiMethod method, MultiMap<PsiElement, String> conflicts, final String modifier) {
-      SuperMethodsSearch.search(method, method.getContainingClass(), true, false).forEach(
+      SuperMethodsSearch.search(method, ReadAction.compute(() -> method.getContainingClass()), true, false).forEach(
         methodSignature -> {
           final PsiMethod superMethod = methodSignature.getMethod();
           if (!hasCompatibleVisibility(superMethod, true, modifier)) {

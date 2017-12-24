@@ -16,8 +16,6 @@
 
 /*
  * @author: Eugene Zhuravlev
- * Date: Feb 5, 2003
- * Time: 4:17:58 PM
  */
 package com.intellij.compiler.impl;
 
@@ -90,6 +88,17 @@ public class CompositeScope extends ExportableUserDataHolderBase implements Comp
     return modules.toArray(new Module[modules.size()]);
   }
 
+  @NotNull
+  @Override
+  public Collection<String> getAffectedUnloadedModules() {
+    Set<String> unloadedModules = new LinkedHashSet<>();
+    for (final CompileScope compileScope : myScopes) {
+      ContainerUtil.addAll(unloadedModules, compileScope.getAffectedUnloadedModules());
+    }
+    return unloadedModules;
+  }
+
+  @Override
   public <T> T getUserData(@NotNull Key<T> key) {
     for (CompileScope compileScope : myScopes) {
       T userData = compileScope.getUserData(key);

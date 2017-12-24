@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.keymap;
 
 import com.intellij.util.containers.ContainerUtil;
@@ -29,10 +15,9 @@ public abstract class KeymapsTestCase extends KeymapsTestCaseBase {
     put("$default", new String[][] {
     { "ADD",                      "ExpandTreeNode", "Graph.ZoomIn"},
     { "BACK_SPACE",               "EditorBackSpace", "Images.Thumbnails.UpFolder"},
-    { "ENTER",                    "EditorChooseLookupItem", "NextTemplateVariable", "EditorEnter", "Images.Thumbnails.EnterAction",
-                                  "PropertyInspectorActions.EditValue", "Console.Execute", "Console.TableResult.EditValue"},
-    { "F2",                       "GotoNextError", "GuiDesigner.EditComponent", "GuiDesigner.EditGroup", "Console.TableResult.EditValue", "XDebugger.SetValue", "Arrangement.Rule.Edit", "Git.Reword.Commit"},
-    { "alt ENTER",                "ShowIntentionActions", "Console.TableResult.EditValue", "DatabaseView.PropertiesAction"},
+    { "ENTER",                    "Console.Execute", "Console.TableResult.EditValue", "DirDiffMenu.SynchronizeDiff", "EditorChooseLookupItem", "EditorEnter", "Images.Thumbnails.EnterAction", "NextTemplateVariable", "PropertyInspectorActions.EditValue"},
+    { "F2",                       "GotoNextError", "GuiDesigner.EditComponent", "GuiDesigner.EditGroup", "Console.TableResult.EditValue", "XDebugger.SetValue", "Arrangement.Rule.Edit", "Git.Reword.Commit", "ShelvedChanges.Rename"},
+    { "alt ENTER",                "ShowIntentionActions", "Console.TableResult.EditValue"},
     { "F5",                       "UML.ApplyCurrentLayout", "CopyElement"},
     { "F7",                       "NextDiff", "StepInto"},
     { "INSERT",                   "EditorToggleInsertState", "UsageView.Include", "DomElementsTreeView.AddElement", "DomCollectionControl.Add", "XDebugger.NewWatch"},
@@ -47,9 +32,9 @@ public abstract class KeymapsTestCase extends KeymapsTestCaseBase {
     { "control 2",                "FileChooser.GotoProject", "GotoBookmark2", "DuplicatesForm.SendToRight"},
     { "control 3",                "GotoBookmark3", "FileChooser.GotoModule"},
     { "control ADD",              "ExpandAll", "ExpandExpandableComponent", "ExpandRegion"},
-    { "control DIVIDE",           "CommentByLineComment", "Images.Editor.ActualSize"},
+    { "control DIVIDE",           "CommentByLineComment", "Images.Editor.ActualSize", "UML.ActualSize"},
     { "control DOWN",             "EditorScrollDown", "EditorLookupDown"},
-    { "control ENTER",            "EditorSplitLine", "ViewSource", "Console.Execute.Multiline"},
+    { "control ENTER",            "Console.Execute.Multiline", "DirDiffMenu.SynchronizeDiff.All", "EditorSplitLine", "ViewSource"},
     { "control EQUALS",           "ExpandAll", "ExpandExpandableComponent", "ExpandRegion"},
     { "control F5",               "Refresh", "Rerun"},
     { "control D",                "EditorDuplicate", "Diff.ShowDiff", "CompareTwoFiles", "SendEOF", "FileChooser.GotoDesktop"},
@@ -58,14 +43,14 @@ public abstract class KeymapsTestCase extends KeymapsTestCaseBase {
     { "control N",                "FileChooser.NewFolder", "GotoClass", "GotoChangedFile"},
     { "control P",                "FileChooser.TogglePathShowing", "ParameterInfo"},
     { "control R",                "Replace", "org.jetbrains.plugins.ruby.rails.console.ReloadSources"},
-    { "control SLASH",            "CommentByLineComment", "Images.Editor.ActualSize"},
+    { "control SLASH",            "CommentByLineComment", "Images.Editor.ActualSize", "UML.ActualSize"},
     { "control U",                "GotoSuperMethod", "CommanderSwapPanels"},
     { "control UP",               "EditorScrollUp", "EditorLookupUp"},
     { "control SUBTRACT",         "CollapseAll", "CollapseExpandableComponent", "CollapseRegion"},
     { "control alt A",            "ChangesView.AddUnversioned", "Diagram.DeselectAll"},
     { "control alt E",            "PerforceDirect.Edit", "Console.History.Browse"},
     { "control alt DOWN",         "NextOccurence", "Console.TableResult.NextPage"},
-    { "control alt G",            "org.jetbrains.plugins.ruby.rails.actions.generators.GeneratorsPopupAction", "Mvc.RunTarget"},
+    { "control alt G",            "DatabaseView.SqlGenerator", "org.jetbrains.plugins.ruby.rails.actions.generators.GeneratorsPopupAction", "Mvc.RunTarget"},
     { "control alt R",            "org.jetbrains.plugins.ruby.tasks.rake.actions.RakeTasksPopupAction", "Django.RunManageTaskAction"},
     { "control alt UP",           "PreviousOccurence", "Console.TableResult.PreviousPage"},
     { "control alt N",            "Inline", "Console.TableResult.SetNull"},
@@ -74,13 +59,13 @@ public abstract class KeymapsTestCase extends KeymapsTestCaseBase {
     { "control MINUS",            "CollapseAll", "CollapseExpandableComponent", "CollapseRegion"},
     { "control PERIOD",           "EditorChooseLookupItemDot", "CollapseSelection"},
     { "shift DELETE",             "$Cut", "Maven.Uml.Exclude"},
-    { "shift ENTER",              "EditorStartNewLine", "Console.TableResult.EditValueMaximized", "OpenElementInNewWindow"},
+    { "shift ENTER",              "CollapseExpandableComponent", "Console.TableResult.EditValueMaximized", "DatabaseView.PropertiesAction", "EditorStartNewLine", "ExpandExpandableComponent", "OpenElementInNewWindow"},
     { "shift F4",                 "Debugger.EditTypeSource", "EditSourceInNewWindow"},
-    { "shift F6",                 "RenameElement", "Git.Reword.Commit"},
+    { "shift F6",                 "RenameElement", "Git.Reword.Commit", "ShelvedChanges.Rename"},
     { "shift F7",                 "PreviousDiff", "SmartStepInto"},
     { "shift TAB",                "PreviousTemplateVariable", "PrevParameter", "EditorUnindentSelection", "PrevTemplateParameter"},
     { "shift alt L",              "org.jetbrains.plugins.ruby.console.LoadInIrbConsoleAction", "context.load"},
-    { "shift control D",          "TagDocumentationNavigation", "Diff.ShowSettingsPopup", "Uml.ShowDiff"},
+    { "shift control D",          "TagDocumentationNavigation", "Diff.ShowSettingsPopup", "Uml.ShowDiff", "Console.TableResult.CompareCells"},
     { "shift control DOWN",       "ResizeToolWindowDown", "MoveStatementDown"},
     { "shift control ENTER",      "EditorCompleteStatement", "Console.Jpa.GenerateSql"},
     { "shift control F10",        "Console.Open", "RunClass", "RunTargetAction"},
@@ -88,7 +73,7 @@ public abstract class KeymapsTestCase extends KeymapsTestCaseBase {
     { "shift control G",          "ClassTemplateNavigation", "GoToClass"},
     { "shift control LEFT",       "EditorPreviousWordWithSelection", "ResizeToolWindowLeft", },
     { "shift control RIGHT",      "EditorNextWordWithSelection", "ResizeToolWindowRight", },
-    { "shift control T",          "GotoTest", "Images.ShowThumbnails"},
+    { "shift control T",          "GotoTest", "Images.ShowThumbnails", "RunDashboard.ShowConfigurations"},
     { "shift control UP",         "ResizeToolWindowUp", "MoveStatementUp"},
     { "shift control alt D",      "UML.ShowChanges", "Console.TableResult.CloneColumn"},
     { "shift control U",          "ShelveChanges.UnshelveWithDialog", "EditorToggleCase"},
@@ -125,6 +110,8 @@ public abstract class KeymapsTestCase extends KeymapsTestCaseBase {
     { "alt DOWN",                 "EditorUnSelectWord", "Arrangement.Rule.Match.Condition.Move.Down"},
     { "alt UP",                   "EditorSelectWord", "Arrangement.Rule.Match.Condition.Move.Up"},
     { "ctrl m",                   "EditorMatchBrace", "Vcs.ShowMessageHistory"},
+    { "control P",                "EditorUp", "MethodOverloadSwitchUp"},
+    { "control N",                "EditorDown", "MethodOverloadSwitchDown"},
     });
     put("Mac OS X", new String[][] {
     { "BACK_SPACE",               "$Delete", "EditorBackSpace", "Images.Thumbnails.UpFolder"},
@@ -153,7 +140,7 @@ public abstract class KeymapsTestCase extends KeymapsTestCaseBase {
     { "control N",                "EditorDown", "FileChooser.NewFolder"},
     { "control P",                "EditorUp", "FileChooser.TogglePathShowing"},
     { "control R",                "org.jetbrains.plugins.ruby.rails.console.ReloadSources", "FindPrevious"},
-    { "control SLASH",            "$Undo", "Images.Editor.ActualSize"},
+    { "control SLASH",            "$Undo", "Images.Editor.ActualSize", "UML.ActualSize"},
     { "control UP",               "EditorBackwardParagraph", "EditorLookupUp"},
     { "control DOWN",             "EditorForwardParagraph", "EditorLookupDown"},
     { "control alt A",            "MethodUp", "ChangesView.AddUnversioned", "Diagram.DeselectAll"},
@@ -173,7 +160,6 @@ public abstract class KeymapsTestCase extends KeymapsTestCaseBase {
     { "control COMMA",            "GotoClass", "GotoChangedFile"},
     { "control F1",               "ExternalJavaDoc", "ShowErrorDescription"},
     { "control F10",              "Android.HotswapChanges", "RunToCursor", "javaee.UpdateRunningApplication", "liveedit.UpdateRunningApplication"},
-    { "control F5",               "Rerun", "Run"},
     { "control N",                "FileChooser.NewFolder", "Generate", },
     { "control P",                "FileChooser.TogglePathShowing", "Print"},
     { "control alt F",            "ReformatCode", "IntroduceField"},
@@ -221,7 +207,7 @@ public abstract class KeymapsTestCase extends KeymapsTestCaseBase {
     { "shift alt G",              "RerunTests", "hg4idea.QGotoFromPatches"},
     { "shift alt L",              "IntroduceVariable", "org.jetbrains.plugins.ruby.console.LoadInIrbConsoleAction", "context.load"},
     { "shift alt P",              "hg4idea.QPushAction", "ImplementMethods"},
-    { "shift alt R",              "RenameElement", "Git.Reword.Commit"},
+    { "shift alt R",              "RenameElement", "Git.Reword.Commit", "ShelvedChanges.Rename"},
     { "shift alt S",              "ShowPopupMenu", "context.save"},
     { "shift alt T",              "ShowPopupMenu", "tasks.switch"},
     { "shift control DOWN",       "ResizeToolWindowDown", "MethodDown"},
@@ -244,10 +230,10 @@ public abstract class KeymapsTestCase extends KeymapsTestCaseBase {
     { "control 2",                "ActivateProjectToolWindow", "FileChooser.GotoProject", "DuplicatesForm.SendToRight"},
     { "control 3",                "ActivateProjectToolWindow", "FileChooser.GotoModule"},
     { "control BACK_SPACE",       "EditorDeleteToWordStart", "ToggleDockMode"},
-    { "control DIVIDE",           "CollapseRegionRecursively", "Images.Editor.ActualSize"},
+    { "control DIVIDE",           "CollapseRegionRecursively", "Images.Editor.ActualSize", "UML.ActualSize"},
     { "control M",                "Vcs.ShowMessageHistory", "Move"},
     { "control N",                "NewElement", "FileChooser.NewFolder"},
-    { "control R",                "RenameElement", "org.jetbrains.plugins.ruby.rails.console.ReloadSources", "Git.Reword.Commit"},
+    { "control R",                "RenameElement", "org.jetbrains.plugins.ruby.rails.console.ReloadSources", "Git.Reword.Commit", "ShelvedChanges.Rename"},
     { "control U",                SECOND_STROKE, "CommanderSwapPanels"},
     { "control O",                "GotoClass", "GotoChangedFile"},
     { "control PERIOD",           "GotoNextError", "EditorChooseLookupItemDot"},
@@ -264,7 +250,7 @@ public abstract class KeymapsTestCase extends KeymapsTestCaseBase {
     { "control alt E",            "Console.History.Browse", "ExecuteInPyConsoleAction", "PerforceDirect.Edit"},
     });
     put("JBuilder", new String[][] {
-    { "F2",                       "EditorTab", "GuiDesigner.EditComponent", "GuiDesigner.EditGroup", "Console.TableResult.EditValue", "XDebugger.SetValue", "Arrangement.Rule.Edit", "Git.Reword.Commit"},
+    { "F2",                       "EditorTab", "GuiDesigner.EditComponent", "GuiDesigner.EditGroup", "Console.TableResult.EditValue", "XDebugger.SetValue", "Arrangement.Rule.Edit", "Git.Reword.Commit", "ShelvedChanges.Rename"},
     { "F5",                       "ToggleBreakpointEnabled", "UML.ApplyCurrentLayout"},
     { "TAB",                      "EditorChooseLookupItemReplace", "NextTemplateVariable", "NextParameter", "EditorIndentSelection", "EmacsStyleIndent", "NextTemplateParameter", "ExpandLiveTemplateByTab"},
     { "control F6",               "PreviousEditorTab", "PreviousTab", },
@@ -280,7 +266,7 @@ public abstract class KeymapsTestCase extends KeymapsTestCaseBase {
     });
     put("Eclipse (Mac OS X)", new String[][] {
     { "meta BACK_SPACE",          "EditorDeleteToWordStart", "$Delete"},
-    { "F2",                       "Console.TableResult.EditValue", "QuickJavaDoc", "XDebugger.SetValue", "Arrangement.Rule.Edit", "Git.Reword.Commit"},
+    { "F2",                       "Console.TableResult.EditValue", "QuickJavaDoc", "XDebugger.SetValue", "Arrangement.Rule.Edit", "Git.Reword.Commit", "ShelvedChanges.Rename"},
     { "F3",                       "GotoDeclaration", "EditSource"},
     { "F5",                       "StepInto", "UML.ApplyCurrentLayout"},
     { "alt DOWN",                 "MoveStatementDown", "Arrangement.Rule.Match.Condition.Move.Down"},
@@ -302,6 +288,7 @@ public abstract class KeymapsTestCase extends KeymapsTestCaseBase {
     { "shift meta X",             "EditorToggleCase", "com.jetbrains.php.framework.FrameworkRunConsoleAction"},
     { "shift meta U",             "FindUsagesInFile", "ShelveChanges.UnshelveWithDialog"},
     { "control shift alt Z",      "Vcs.RollbackChangedLines", "ChangesView.Revert"},
+    { "meta alt H",               "ChangesView.ShelveSilently", "RunDashboard.ShowConfigurations"}
     });
   }};
   // @formatter:on

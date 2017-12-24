@@ -18,6 +18,7 @@ package com.intellij.ui;
 import com.intellij.icons.AllIcons;
 import com.intellij.ide.CopyProvider;
 import com.intellij.ide.DataManager;
+import com.intellij.ide.util.treeView.ValidateableNode;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.application.ApplicationManager;
@@ -381,7 +382,7 @@ public abstract class FinderRecursivePanel<T> extends OnePixelSplitter implement
       return selectedValue;
     }
 
-    if (selectedValue instanceof DataProvider) {
+    if (selectedValue instanceof DataProvider && (!(selectedValue instanceof ValidateableNode) || ((ValidateableNode)selectedValue).isValid())) {
       return ((DataProvider)selectedValue).getData(dataId);
     }
     if (PlatformDataKeys.COPY_PROVIDER.is(dataId)) {
@@ -429,15 +430,19 @@ public abstract class FinderRecursivePanel<T> extends OnePixelSplitter implement
    */
   public void updateSelectedPath(Object... pathToSelect) {
     if (!myUpdateSelectedPathModeActive.compareAndSet(false, true)) return;
-
     try {
       FinderRecursivePanel panel = this;
       for (int i = 0; i < pathToSelect.length; i++) {
         Object selectedValue = pathToSelect[i];
         panel.setSelectedValue(selectedValue);
+
         if (i < pathToSelect.length - 1) {
           final JComponent component = panel.getSecondComponent();
-          assert component instanceof FinderRecursivePanel : Arrays.toString(pathToSelect);
+          if (!(component instanceof FinderRecursivePanel)) {
+            throw new IllegalStateException("failed to select idx=" + (i + 1) + ": " +
+                                            "component=" + component + ", " +
+                                            "pathToSelect=" + Arrays.toString(pathToSelect));
+          }
           panel = (FinderRecursivePanel)component;
         }
       }

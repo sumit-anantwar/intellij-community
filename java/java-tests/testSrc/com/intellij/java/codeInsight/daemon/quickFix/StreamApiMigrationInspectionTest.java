@@ -37,15 +37,16 @@ import org.junit.runners.Suite;
   StreamApiMigrationInspectionTest.FilterTest.class,
   StreamApiMigrationInspectionTest.FindFirstTest.class,
   StreamApiMigrationInspectionTest.FlatMapFirstTest.class,
-  StreamApiMigrationInspectionTest.ForeachFirstTest.class,
+  StreamApiMigrationInspectionTest.ForEachTest.class,
   StreamApiMigrationInspectionTest.JoiningTest.class,
   StreamApiMigrationInspectionTest.LimitTest.class,
   StreamApiMigrationInspectionTest.MinMaxTest.class,
   StreamApiMigrationInspectionTest.NoneMatchTest.class,
   StreamApiMigrationInspectionTest.OtherTest.class,
   StreamApiMigrationInspectionTest.ReductionTest.class,
-  StreamApiMigrationInspectionTest.SumTest.class,
+  StreamApiMigrationInspectionTest.SummingTest.class,
   StreamApiMigrationInspectionTest.TakeWhileTest.class,
+  StreamApiMigrationInspectionTest.Java9Test.class,
 })
 public class StreamApiMigrationInspectionTest {
   public static abstract class StreamApiMigrationInspectionBaseTest extends LightQuickFixParameterizedTestCase {
@@ -151,7 +152,7 @@ public class StreamApiMigrationInspectionTest {
     }
   }
 
-  public static class ForeachFirstTest extends StreamApiMigrationInspectionBaseTest {
+  public static class ForEachTest extends StreamApiMigrationInspectionBaseTest {
     @Override
     String getFolder() {
       return "foreach";
@@ -201,7 +202,7 @@ public class StreamApiMigrationInspectionTest {
     }
   }
 
-  public static class SumTest extends StreamApiMigrationInspectionBaseTest {
+  public static class SummingTest extends StreamApiMigrationInspectionBaseTest {
     @Override
     String getFolder() {
       return "sum";
@@ -212,6 +213,18 @@ public class StreamApiMigrationInspectionTest {
     @Override
     String getFolder() {
       return "takeWhile";
+    }
+  }
+
+  public static class Java9Test extends StreamApiMigrationInspectionBaseTest {
+    @Override
+    String getFolder() {
+      return "java9";
+    }
+
+    @Override
+    protected LanguageLevel getDefaultLanguageLevel() {
+      return LanguageLevel.JDK_1_9;
     }
   }
 }

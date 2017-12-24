@@ -52,8 +52,6 @@ public abstract class VcsLogUiPropertiesImpl implements PersistentStateComponent
     public Deque<UserGroup> RECENTLY_FILTERED_BRANCH_GROUPS = new ArrayDeque<>();
     public Map<String, Boolean> HIGHLIGHTERS = ContainerUtil.newTreeMap();
     public Map<String, List<String>> FILTERS = ContainerUtil.newTreeMap();
-    @Deprecated public boolean COMPACT_REFERENCES_VIEW = true;
-    @Deprecated public boolean SHOW_TAG_NAMES = false;
     public TextFilterSettings TEXT_FILTER_SETTINGS = new TextFilterSettings();
     public Map<Integer, Integer> COLUMN_WIDTH = ContainerUtil.newHashMap();
     public List<Integer> COLUMN_ORDER = ContainerUtil.newArrayList();
@@ -280,6 +278,8 @@ public abstract class VcsLogUiPropertiesImpl implements PersistentStateComponent
 
     public abstract void onColumnOrderChanged();
 
+    public abstract void onShowChangesFromParentsChanged();
+
     @Override
     public <T> void onPropertyChanged(@NotNull VcsLogUiProperties.VcsLogUiProperty<T> property) {
       if (CommonUiProperties.SHOW_DETAILS.equals(property)) {
@@ -311,6 +311,9 @@ public abstract class VcsLogUiPropertiesImpl implements PersistentStateComponent
       }
       else if (property instanceof CommonUiProperties.TableColumnProperty) {
         onColumnWidthChanged(((CommonUiProperties.TableColumnProperty)property).getColumn());
+      }
+      else if (SHOW_CHANGES_FROM_PARENTS.equals(property)) {
+        onShowChangesFromParentsChanged();
       }
       else {
         throw new UnsupportedOperationException("Property " + property + " does not exist");

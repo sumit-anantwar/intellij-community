@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.python.codeInsight.override;
 
 import com.google.common.collect.Lists;
@@ -160,9 +146,7 @@ public class PyOverrideImplementUtil {
     }.execute();
   }
 
-  private static void write(@NotNull final PyClass pyClass,
-                            @NotNull final List<PyMethodMember> newMembers,
-                            @NotNull final Editor editor, boolean implement) {
+  private static void write(@NotNull PyClass pyClass, @NotNull List<PyMethodMember> newMembers, @NotNull Editor editor, boolean implement) {
     final PyStatementList statementList = pyClass.getStatementList();
     final int offset = editor.getCaretModel().getOffset();
     PsiElement anchor = null;
@@ -175,10 +159,11 @@ public class PyOverrideImplementUtil {
     }
 
     PyFunction element = null;
-    for (PyMethodMember newMember : newMembers) {
-      PyFunction baseFunction = (PyFunction)newMember.getPsiElement();
+    final LanguageLevel languageLevel = LanguageLevel.forElement(statementList);
+    for (PyMethodMember newMember : Lists.reverse(newMembers)) {
+      final PyFunction baseFunction = (PyFunction)newMember.getPsiElement();
       final PyFunctionBuilder builder = buildOverriddenFunction(pyClass, baseFunction, implement);
-      PyFunction function = builder.addFunctionAfter(statementList, anchor, LanguageLevel.forElement(statementList));
+      final PyFunction function = builder.addFunctionAfter(statementList, anchor, languageLevel);
       element = CodeInsightUtilCore.forcePsiPostprocessAndRestoreElement(function);
     }
 
@@ -217,6 +202,9 @@ public class PyOverrideImplementUtil {
     PyAnnotation anno = baseFunction.getAnnotation();
     if (anno != null && level.isAtLeast(LanguageLevel.PYTHON30)) {
       pyFunctionBuilder.annotation(anno.getText());
+    }
+    if (baseFunction.isAsync()) {
+      pyFunctionBuilder.makeAsync();
     }
     final TypeEvalContext context = TypeEvalContext.userInitiated(baseFunction.getProject(), baseFunction.getContainingFile());
     final List<PyCallableParameter> baseParams = baseFunction.getParameters(context);
@@ -274,7 +262,7 @@ public class PyOverrideImplementUtil {
       }
     }
 
-    if (PyNames.TYPES_INSTANCE_TYPE.equals(baseClass.getQualifiedName()) || raisesNotImplementedError(baseFunction) || implement) {
+    if (PyNames.TYPES_INSTANCE_TYPE.equals(baseClass.getQualifiedName()) || baseFunction.onlyRaisesNotImplementedError() || implement) {
       statementBody.append(PyNames.PASS);
     }
     else {
@@ -285,7 +273,7 @@ public class PyOverrideImplementUtil {
         statementBody.append(PyNames.SUPER);
         statementBody.append("(");
         final LanguageLevel langLevel = ((PyFile)pyClass.getContainingFile()).getLanguageLevel();
-        if (!langLevel.isPy3K()) {
+        if (langLevel.isPython2()) {
           final String baseFirstName = !baseParams.isEmpty() ? baseParams.get(0).getName() : null;
           final String firstName = baseFirstName != null ? baseFirstName : PyNames.CANONICAL_SELF;
           PsiElement outerClass = PsiTreeUtil.getParentOfType(pyClass, PyClass.class, true, PyFunction.class);
@@ -316,13 +304,6 @@ public class PyOverrideImplementUtil {
     return pyFunctionBuilder;
   }
 
-  public static boolean raisesNotImplementedError(@NotNull PyFunction function) {
-    PyStatementList statementList = function.getStatementList();
-    IfVisitor visitor = new IfVisitor();
-    statementList.accept(visitor);
-    return !visitor.hasReturnInside && visitor.raiseNotImplemented;
-  }
-
   // TODO find a better place for this logic
   private static String getReferenceText(PyClass fromClass, PyClass toClass) {
     final PyExpression[] superClassExpressions = fromClass.getSuperClassExpressions();
@@ -349,7 +330,14 @@ public class PyOverrideImplementUtil {
         cls.findClassAttribute(methodName, false, context) != null) {
       return false;
     }
-    return PyUtil.isDecoratedAsAbstract(method) || raisesNotImplementedError(method);
+    final PyClass methodClass = method.getContainingClass();
+    if (methodClass != null) {
+      for (PyClass ancestor : cls.getAncestorClasses(context)) {
+        if (ancestor.equals(methodClass)) break;
+        if (ancestor.findClassAttribute(methodName, false, context) != null) return false;
+      }
+    }
+    return method.onlyRaisesNotImplementedError() || PyKnownDecoratorUtil.hasAbstractDecorator(method, context);
   }
 
   /**
@@ -369,32 +357,5 @@ public class PyOverrideImplementUtil {
       }
     }
     return Lists.newArrayList(functions.values());
-  }
-
-  private static class IfVisitor extends PyRecursiveElementVisitor {
-    private boolean hasReturnInside;
-    private boolean raiseNotImplemented;
-
-    @Override
-    public void visitPyReturnStatement(PyReturnStatement node) {
-      hasReturnInside = true;
-    }
-
-    @Override
-    public void visitPyRaiseStatement(PyRaiseStatement node) {
-      final PyExpression[] expressions = node.getExpressions();
-      if (expressions.length > 0) {
-        final PyExpression firstExpression = expressions[0];
-        if (firstExpression instanceof PyCallExpression) {
-          final PyExpression callee = ((PyCallExpression)firstExpression).getCallee();
-          if (callee != null && callee.getText().equals(PyNames.NOT_IMPLEMENTED_ERROR)) {
-            raiseNotImplemented = true;
-          }
-        }
-        else if (firstExpression.getText().equals(PyNames.NOT_IMPLEMENTED_ERROR)) {
-          raiseNotImplemented = true;
-        }
-      }
-    }
   }
 }

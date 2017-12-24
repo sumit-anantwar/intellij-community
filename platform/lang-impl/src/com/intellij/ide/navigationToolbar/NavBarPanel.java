@@ -29,7 +29,6 @@ import com.intellij.ide.projectView.ProjectView;
 import com.intellij.ide.projectView.impl.AbstractProjectViewPane;
 import com.intellij.ide.projectView.impl.ProjectRootsUtil;
 import com.intellij.ide.ui.UISettings;
-import com.intellij.ide.ui.customization.CustomActionsSchema;
 import com.intellij.ide.util.DeleteHandler;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
@@ -42,10 +41,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ui.configuration.actions.ModuleDeleteProvider;
 import com.intellij.openapi.ui.Queryable;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
-import com.intellij.openapi.util.ActionCallback;
-import com.intellij.openapi.util.AsyncResult;
-import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.SystemInfo;
+import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VFileProperty;
 import com.intellij.openapi.vfs.VfsUtilCore;
@@ -64,8 +60,10 @@ import com.intellij.ui.popup.AbstractPopup;
 import com.intellij.ui.popup.PopupOwner;
 import com.intellij.util.Consumer;
 import com.intellij.util.ObjectUtils;
-import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.containers.JBIterable;
 import com.intellij.util.ui.UIUtil;
+import com.intellij.util.ui.accessibility.AccessibleContextUtil;
+import com.intellij.util.ui.accessibility.ScreenReader;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -75,8 +73,7 @@ import javax.swing.event.PopupMenuEvent;
 import javax.swing.plaf.PanelUI;
 import javax.swing.tree.TreeNode;
 import java.awt.*;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
+import java.awt.event.*;
 import java.io.File;
 import java.util.*;
 import java.util.List;
@@ -97,6 +94,8 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
   private final ModuleDeleteProvider myDeleteModuleProvider = new ModuleDeleteProvider();
   private final IdeView myIdeView;
   private final CopyPasteDelegator myCopyPasteDelegator;
+  private FocusListener myNavBarItemFocusListener;
+
   private LightweightHint myHint = null;
   private NavBarPopup myNodePopup = null;
   private JComponent myHintContainer;
@@ -109,14 +108,14 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
   private RelativePoint myLocationCache;
 
   public NavBarPanel(@NotNull Project project, boolean docked) {
-    super(new FlowLayout(FlowLayout.LEFT, 0 , 0));
+    super(new FlowLayout(FlowLayout.LEFT, 0, 0));
     myProject = project;
     myModel = createModel();
     myIdeView = new NavBarIdeView(this);
     myPresentation = new NavBarPresentation(myProject);
     myUpdateQueue = new NavBarUpdateQueue(this);
 
-    installPopupHandler(this);
+    installPopupHandler(this, -1);
     setOpaque(false);
     if (!docked && UIUtil.isUnderDarcula()) {
       setBorder(new LineBorder(Gray._120, 1));
@@ -125,8 +124,8 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
       @Override
       @NotNull
       protected PsiElement[] getSelectedElements() {
-        final PsiElement element = getSelectedElement(PsiElement.class);
-        return element == null ? PsiElement.EMPTY_ARRAY : new PsiElement[]{element};
+        Object inner = getDataInner(LangDataKeys.PSI_ELEMENT_ARRAY.getName());
+        return inner instanceof PsiElement[] ? (PsiElement[])inner : PsiElement.EMPTY_ARRAY;
       }
     };
 
@@ -134,15 +133,67 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
     myUpdateQueue.queueRebuildUi();
     if (!docked) {
       final ActionCallback typeAheadDone = new ActionCallback();
-      IdeFocusManager.getInstance(project).typeAheadUntil(typeAheadDone);
+      IdeFocusManager.getInstance(project).typeAheadUntil(typeAheadDone, "NavBarPanel");
       myUpdateQueue.queueTypeAheadDone(typeAheadDone);
     }
 
     Disposer.register(project, this);
+    AccessibleContextUtil.setName(this, "Navigation Bar");
+  }
+
+  /**
+   * Navigation bar entry point to determine if the keyboard/focus behavior should be
+   * compatible with screen readers. This additional level of indirection makes it
+   * easier to figure out the various locations in the various navigation bar components
+   * that enable screen reader friendly behavior.
+   */
+  protected boolean allowNavItemsFocus() {
+    return ScreenReader.isActive();
+  }
+
+  public boolean isFocused() {
+    if (allowNavItemsFocus()) {
+      return UIUtil.isFocusAncestor(this);
+    } else {
+      return hasFocus();
+    }
+  }
+
+  public void addNavBarItemFocusListener(@Nullable FocusListener l) {
+    if (l == null) {
+      return;
+    }
+    myNavBarItemFocusListener = AWTEventMulticaster.add(myNavBarItemFocusListener, l);
+  }
+
+  public void removeNavBarItemFocusListener(@Nullable FocusListener l) {
+    if (l == null) {
+      return;
+    }
+    myNavBarItemFocusListener = AWTEventMulticaster.remove(myNavBarItemFocusListener, l);
+  }
+
+  protected void fireNavBarItemFocusGained(final FocusEvent e) {
+    FocusListener listener = myNavBarItemFocusListener;
+    if (listener != null) {
+      listener.focusGained(e);
+    }
+  }
+
+  protected void fireNavBarItemFocusLost(final FocusEvent e) {
+    FocusListener listener = myNavBarItemFocusListener;
+    if (listener != null) {
+      listener.focusLost(e);
+    }
   }
 
   protected NavBarModel createModel() {
     return new NavBarModel(myProject);
+  }
+
+  @Nullable
+  public NavBarPopup getNodePopup() {
+    return myNodePopup;
   }
 
   public boolean isNodePopupActive() {
@@ -221,7 +272,8 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
       if (myModel.size() - 1 == index) {
         shiftFocus(-1);
         ctrlClick(index - 1);
-      } else {
+      }
+      else {
         ctrlClick(index);
       }
     }
@@ -252,7 +304,7 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
   }
 
   boolean isSelectedInPopup(Object object) {
-    return isNodePopupActive() && Arrays.asList(myNodePopup.getSelectedValues()).contains(object);
+    return isNodePopupActive() && myNodePopup.getList().getSelectedValuesList().contains(object);
   }
 
   static Object expandDirsWithJustOneSubdir(Object target) {
@@ -275,8 +327,8 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
       item.update();
     }
     if (UISettings.getInstance().getShowNavigationBar()) {
-      NavBarRootPaneExtension.NavBarWrapperPanel wrapperPanel = (NavBarRootPaneExtension.NavBarWrapperPanel)
-        SwingUtilities.getAncestorOfClass(NavBarRootPaneExtension.NavBarWrapperPanel.class, this);
+      NavBarRootPaneExtension.NavBarWrapperPanel wrapperPanel = UIUtil.getParentOfType(
+        NavBarRootPaneExtension.NavBarWrapperPanel.class, this);
 
       if (wrapperPanel != null) {
         wrapperPanel.revalidate();
@@ -285,24 +337,26 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
     }
   }
 
-  void resetSelection() {
-    int size = myModel.size();
-    if (size > 0) myModel.setSelectedIndex(size - 1);
-  }
-
   public void rebuildAndSelectTail(final boolean requestFocus) {
     myUpdateQueue.queueModelUpdateFromFocus();
     myUpdateQueue.queueRebuildUi();
     myUpdateQueue.queueSelect(() -> {
       if (!myList.isEmpty()) {
         myModel.setSelectedIndex(myList.size() - 1);
-        if (requestFocus) {
-          IdeFocusManager.getInstance(myProject).requestFocus(this, true);
-        }
+        requestSelectedItemFocus();
       }
     });
 
     myUpdateQueue.flush();
+  }
+
+  public void requestSelectedItemFocus() {
+    int index = myModel.getSelectedIndex();
+    if (index >= 0 && index < myModel.size() && allowNavItemsFocus()) {
+      IdeFocusManager.getInstance(myProject).requestFocus(getItem(index), true);
+    } else {
+      IdeFocusManager.getInstance(myProject).requestFocus(this, true);
+    }
   }
 
   public void moveLeft() {
@@ -312,10 +366,14 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
   public void moveRight() {
     shiftFocus(1);
   }
+
   void shiftFocus(int direction) {
     final int selectedIndex = myModel.getSelectedIndex();
     final int index = myModel.getIndexByModel(selectedIndex + direction);
     myModel.setSelectedIndex(index);
+    if (allowNavItemsFocus()) {
+      requestSelectedItemFocus();
+    }
   }
 
   void scrollSelectionToVisible() {
@@ -372,12 +430,11 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
             && !modelAttributes2.toTextAttributes().equals(labelAttributes.toTextAttributes())) {
           return true;
         }
-
         index++;
       }
-
       return false;
-    } else {
+    }
+    else {
       return true;
     }
   }
@@ -388,7 +445,7 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
     return !isShowing() ? null : (Window)UIUtil.findUltimateParent(this);
   }
 
-  private void installPopupHandler(@NotNull JComponent component) {
+  void installPopupHandler(@NotNull JComponent component, int index) {
     ActionManager actionManager = ActionManager.getInstance();
     PopupHandler.installPopupHandler(component, new ActionGroup() {
       @NotNull
@@ -403,13 +460,20 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
         if (popupGroup == null) popupGroup = IdeActions.GROUP_NAVBAR_POPUP;
         return ((ActionGroup)actionManager.getAction(popupGroup)).getChildren(e);
       }
-    }, ActionPlaces.NAVIGATION_BAR_POPUP, actionManager);
+    }, ActionPlaces.NAVIGATION_BAR_POPUP, actionManager, new PopupMenuListenerAdapter() {
+      @Override
+      public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
+        if (index != -1) {
+          myModel.setSelectedIndex(index);
+        }
+      }
+    });
   }
 
-  public void installActions(final int index, final NavBarItem component) {
+  public void installActions(int index, NavBarItem component) {
     //suppress it for a while
     //installDnD(index, component);
-    installPopupHandler(component);
+    installPopupHandler(component, index);
     ListenerUtil.addMouseListener(component, new MouseAdapter() {
       @Override
       public void mouseReleased(final MouseEvent e) {
@@ -427,17 +491,26 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
 
       private void click(final MouseEvent e) {
         if (e.isConsumed()) return;
-        if (e.isPopupTrigger()) return;
 
+        if (e.isPopupTrigger()) return;
         if (e.getClickCount() == 1) {
           ctrlClick(index);
-          myModel.setSelectedIndex(index);
           e.consume();
         }
         else if (e.getClickCount() == 2 && e.getButton() == MouseEvent.BUTTON1) {
-          myModel.setSelectedIndex(index);
-          IdeFocusManager.getInstance(myProject).requestFocus(NavBarPanel.this, true);
+          requestSelectedItemFocus();
           doubleClick(index);
+          e.consume();
+        }
+      }
+    });
+
+    ListenerUtil.addKeyListener(component, new KeyAdapter() {
+      @Override
+      public void keyPressed(KeyEvent e) {
+        if (e.getModifiers() == 0 && e.getKeyCode() == KeyEvent.VK_SPACE) {
+          ctrlClick(index);
+          myModel.setSelectedIndex(index);
           e.consume();
         }
       }
@@ -449,12 +522,12 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
       .setBeanProvider(dnDActionInfo -> new DnDDragStartBean(new TransferableWrapper() {
         @Override
         public List<File> asFileList() {
-          final Object o = myModel.get(index);
+          Object o = myModel.get(index);
           if (o instanceof PsiElement) {
-            final VirtualFile vf =  o instanceof PsiDirectory ? ((PsiDirectory)o).getVirtualFile()
-                                                              : ((PsiElement)o).getContainingFile().getVirtualFile();
+            VirtualFile vf = o instanceof PsiDirectory ? ((PsiDirectory)o).getVirtualFile()
+                                                       : ((PsiElement)o).getContainingFile().getVirtualFile();
             if (vf != null) {
-              return Arrays.asList(new File(vf.getPath()).getAbsoluteFile());
+              return Collections.singletonList(new File(vf.getPath()).getAbsoluteFile());
             }
           }
           return Collections.emptyList();
@@ -499,7 +572,7 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
   }
 
   private void ctrlClick(final int index) {
-    if (isNodePopupShowing()) {
+    if (isNodePopupActive()) {
       cancelPopup();
       if (myModel.getSelectedIndex() == index) {
         return;
@@ -527,10 +600,6 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
     }
   }
 
-  boolean isNodePopupShowing() {
-    return myNodePopup != null && myNodePopup.isVisible();
-  }
-
   protected void navigateInsideBar(final Object object) {
     Object obj = expandDirsWithJustOneSubdir(object);
     myContextObject = null;
@@ -556,22 +625,6 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
     }, NavBarUpdateQueue.ID.NAVIGATE_INSIDE);
   }
 
-  void rightClick(final int index) {
-    final ActionManager actionManager = ActionManager.getInstance();
-    final ActionGroup group = (ActionGroup)CustomActionsSchema.getInstance().getCorrectedAction(IdeActions.GROUP_NAVBAR_POPUP);
-    final ActionPopupMenu popupMenu = actionManager.createActionPopupMenu(ActionPlaces.NAVIGATION_BAR_POPUP, group);
-    final NavBarItem item = getItem(index);
-    if (item != null) {
-      popupMenu.getComponent().addPopupMenuListener(new PopupMenuListenerAdapter() {
-        @Override
-        public void popupMenuCanceled(PopupMenuEvent event) {
-          resetSelection(); // select last item if popup cancelled
-        }
-      });
-      popupMenu.getComponent().show(this, item.getX(), item.getY() + item.getHeight());
-    }
-  }
-
   void restorePopup() {
     cancelPopup();
     ctrlClick(myModel.getSelectedIndex());
@@ -586,6 +639,9 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
     if (myNodePopup != null) {
       myNodePopup.hide(ok);
       myNodePopup = null;
+      if (allowNavItemsFocus()) {
+        requestSelectedItemFocus();
+      }
     }
   }
 
@@ -611,23 +667,36 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
     return getDataInner(dataId);
   }
 
+  @Nullable
   private Object getDataInner(String dataId) {
+    return getDataImpl(dataId, () -> getSelection());
+  }
+
+  @NotNull
+  JBIterable<?> getSelection() {
+    Object value = myModel.getSelectedValue();
+    if (value != null) return JBIterable.of(value);
+    int size = myModel.size();
+    return JBIterable.of(size > 0 ? myModel.getElement(size - 1) : null);
+  }
+
+  Object getDataImpl(String dataId, Getter<JBIterable<?>> selection) {
     if (CommonDataKeys.PROJECT.is(dataId)) {
       return !myProject.isDisposed() ? myProject : null;
     }
     if (LangDataKeys.MODULE.is(dataId)) {
-      final Module module = getSelectedElement(Module.class);
+      Module module = selection.get().filter(Module.class).first();
       if (module != null && !module.isDisposed()) return module;
-      final PsiElement element = getSelectedElement(PsiElement.class);
+      PsiElement element = selection.get().filter(PsiElement.class).first();
       if (element != null) {
         return ModuleUtilCore.findModuleForPsiElement(element);
       }
       return null;
     }
     if (LangDataKeys.MODULE_CONTEXT.is(dataId)) {
-      final PsiDirectory directory = getSelectedElement(PsiDirectory.class);
+      PsiDirectory directory = selection.get().filter(PsiDirectory.class).first();
       if (directory != null) {
-        final VirtualFile dir = directory.getVirtualFile();
+        VirtualFile dir = directory.getVirtualFile();
         if (ProjectRootsUtil.isModuleContentRoot(dir, myProject)) {
           return ModuleUtilCore.findModuleForPsiElement(directory);
         }
@@ -635,35 +704,25 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
       return null;
     }
     if (CommonDataKeys.PSI_ELEMENT.is(dataId)) {
-      final PsiElement element = getSelectedElement(PsiElement.class);
+      PsiElement element = selection.get().filter(PsiElement.class).first();
       return element != null && element.isValid() ? element : null;
     }
     if (LangDataKeys.PSI_ELEMENT_ARRAY.is(dataId)) {
-      final List<PsiElement> elements = getSelectedElements(PsiElement.class);
-      if (elements == null || elements.isEmpty()) return null;
-      List<PsiElement> result = new ArrayList<>();
-      for (PsiElement element : elements) {
-        if (element != null && element.isValid()) {
-          result.add(element);
-        }
-      }
+      List<PsiElement> result = selection.get().filter(PsiElement.class)
+        .filter(e -> e != null && e.isValid()).toList();
       return result.isEmpty() ? null : result.toArray(new PsiElement[result.size()]);
     }
 
     if (CommonDataKeys.VIRTUAL_FILE_ARRAY.is(dataId)) {
-      PsiElement[] psiElements = (PsiElement[])getData(LangDataKeys.PSI_ELEMENT_ARRAY.getName());
-      if (psiElements == null) return null;
-      Set<VirtualFile> files = ContainerUtil.newLinkedHashSet();
-      for (PsiElement element : psiElements) {
-        VirtualFile virtualFile = PsiUtilCore.getVirtualFile(element);
-        ContainerUtil.addIfNotNull(files, virtualFile);
-      }
+      Set<VirtualFile> files = selection.get().filter(PsiElement.class)
+        .filter(e -> e != null && e.isValid())
+        .filterMap(e -> PsiUtilCore.getVirtualFile(e)).toSet();
       return !files.isEmpty() ? VfsUtilCore.toVirtualFileArray(files) : null;
     }
 
     if (CommonDataKeys.NAVIGATABLE_ARRAY.is(dataId)) {
-      final List<Navigatable> elements = getSelectedElements(Navigatable.class);
-      return elements == null || elements.isEmpty() ? null : elements.toArray(new Navigatable[elements.size()]);
+      List<Navigatable> elements = selection.get().filter(Navigatable.class).toList();
+      return elements.isEmpty() ? null : elements.toArray(new Navigatable[elements.size()]);
     }
 
     if (PlatformDataKeys.CONTEXT_COMPONENT.is(dataId)) {
@@ -679,7 +738,7 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
       return myCopyPasteDelegator.getPasteProvider();
     }
     if (PlatformDataKeys.DELETE_ELEMENT_PROVIDER.is(dataId)) {
-      return getSelectedElement(Module.class) != null ? myDeleteModuleProvider : new DeleteHandler.DefaultDeleteProvider();
+      return selection.get().filter(Module.class).isNotEmpty() ? myDeleteModuleProvider : new DeleteHandler.DefaultDeleteProvider();
     }
 
     if (LangDataKeys.IDE_VIEW.is(dataId)) {
@@ -688,45 +747,6 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
 
     return null;
   }
-
-  @Nullable
-  @SuppressWarnings({"unchecked"})
-  <T> T getSelectedElement(Class<T> klass) {
-    Object value = null;
-    if (myNodePopup != null) {
-      value = myNodePopup.getSelectedValue();
-    }
-    if (value == null) value =  myModel.getSelectedValue();
-    if (value == null) {
-      final int modelSize = myModel.size();
-      if (modelSize > 0) {
-        value = myModel.getElement(modelSize - 1);
-      }
-    }
-    return value != null && klass.isAssignableFrom(value.getClass()) ? (T)value : null;
-  }
-
-  @Nullable
-  @SuppressWarnings({"unchecked"})
-  <T> List<T> getSelectedElements(Class<T> klass) {
-    Object[] values = null;
-    if (myNodePopup != null) {
-      values = myNodePopup.getSelectedValues();
-    }
-    if (values == null) {
-      final T selectedElement = getSelectedElement(klass);
-      return selectedElement == null ? null : Arrays.asList(selectedElement);
-    } else {
-      List<T> result = new ArrayList<>();
-      for (Object value : values) {
-        if (value != null && klass.isAssignableFrom(value.getClass())) {
-          result.add((T)value);
-        }
-      }
-      return result;
-    }
-  }
-
 
   @Override
   public Point getBestPopupPosition() {
@@ -753,8 +773,9 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
   @Override
   public void removeNotify() {
     super.removeNotify();
-    if (ScreenUtil.isStandardAddRemoveNotify(this))
+    if (ScreenUtil.isStandardAddRemoveNotify(this)) {
       Disposer.dispose(this);
+    }
   }
 
   public void updateState(final boolean show) {
@@ -810,19 +831,24 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
   }
 
   AsyncResult<RelativePoint> getHintContainerShowPoint() {
-    final AsyncResult<RelativePoint> result = new AsyncResult<>();
+    AsyncResult<RelativePoint> result = new AsyncResult<>();
     if (myLocationCache == null) {
       if (myHintContainer != null) {
         final Point p = AbstractPopup.getCenterOf(myHintContainer, this);
         p.y -= myHintContainer.getVisibleRect().height / 4;
         myLocationCache = RelativePoint.fromScreen(p);
-      } else {
+      }
+      else {
+        DataManager dataManager = DataManager.getInstance();
         if (myContextComponent != null) {
-          myLocationCache = JBPopupFactory.getInstance().guessBestPopupLocation(DataManager.getInstance().getDataContext(myContextComponent));
-        } else {
-          DataManager.getInstance().getDataContextFromFocus().doWhenDone((Consumer<DataContext>)dataContext -> {
+          DataContext ctx = dataManager.getDataContext(myContextComponent);
+          myLocationCache = JBPopupFactory.getInstance().guessBestPopupLocation(ctx);
+        }
+        else {
+          dataManager.getDataContextFromFocus().doWhenDone((Consumer<DataContext>)dataContext -> {
             myContextComponent = PlatformDataKeys.CONTEXT_COMPONENT.getData(dataContext);
-            myLocationCache = JBPopupFactory.getInstance().guessBestPopupLocation(DataManager.getInstance().getDataContext(myContextComponent));
+            DataContext ctx = dataManager.getDataContext(myContextComponent);
+            myLocationCache = JBPopupFactory.getInstance().guessBestPopupLocation(ctx);
           });
         }
       }
@@ -848,8 +874,9 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
     for (int i = 0; i < myList.size(); i++) {
       NavBarItem each = myList.get(i);
       if (each.isSelected()) {
-        result.append("[" + each.getText() + "]");
-      } else {
+        result.append("[").append(each.getText()).append("]");
+      }
+      else {
         result.append(each.getText());
       }
       if (i < myList.size() - 1) {
@@ -858,7 +885,7 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
     }
     info.put("navBar", result.toString());
 
-    if (isNodePopupShowing()) {
+    if (isNodePopupActive()) {
       StringBuilder popupText = new StringBuilder();
       JBList list = myNodePopup.getList();
       for (int i = 0; i < list.getModel().getSize(); i++) {
@@ -866,8 +893,9 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
         String text = new NavBarItem(this, eachElement, myNodePopup).getText();
         int selectedIndex = list.getSelectedIndex();
         if (selectedIndex != -1 && eachElement.equals(list.getSelectedValue())) {
-          popupText.append("[" + text + "]");
-        } else {
+          popupText.append("[").append(text).append("]");
+        }
+        else {
           popupText.append(text);
         }
         if (i < list.getModel().getSize() - 1) {

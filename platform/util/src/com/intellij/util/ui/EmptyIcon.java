@@ -27,6 +27,8 @@ import java.beans.PropertyChangeListener;
 import java.util.HashMap;
 import java.util.Map;
 
+import static com.intellij.util.ui.JBUI.ScaleType.PIX_SCALE;
+
 /**
  * @author max
  * @author Konstantin Bulenkov
@@ -113,14 +115,15 @@ public class EmptyIcon extends JBUI.CachingScalableJBIcon<EmptyIcon> {
     return new EmptyIcon(this);
   }
 
+  @NotNull
   @Override
-  public EmptyIcon withJBUIPreScaled(boolean preScaled) {
-    if (myUseCache && isJBUIPreScaled() != preScaled) {
+  public EmptyIcon withIconPreScaled(boolean preScaled) {
+    if (myUseCache && isIconPreScaled() != preScaled) {
       Integer key = key(width, height);
       if (key != null) cache.remove(key); // rather useless to keep it in cache
       return create(width, height, preScaled);
     }
-    return (EmptyIcon)super.withJBUIPreScaled(preScaled);
+    return (EmptyIcon)super.withIconPreScaled(preScaled);
   }
 
   private static EmptyIcon create(int width, int height, boolean preScaled) {
@@ -128,7 +131,7 @@ public class EmptyIcon extends JBUI.CachingScalableJBIcon<EmptyIcon> {
     EmptyIcon icon = key != null ? cache.get(key) : null;
     if (icon == null) {
       icon = new EmptyIcon(width, height, true);
-      icon.setJBUIPreScaled(preScaled);
+      icon.setIconPreScaled(preScaled);
       if (key != null) cache.put(key, icon);
     }
     return icon;
@@ -141,12 +144,12 @@ public class EmptyIcon extends JBUI.CachingScalableJBIcon<EmptyIcon> {
 
   @Override
   public int getIconWidth() {
-    return scaleVal(width);
+    return (int)Math.ceil(scaleVal(width));
   }
 
   @Override
   public int getIconHeight() {
-    return scaleVal(height);
+    return (int)Math.ceil(scaleVal(height));
   }
 
   @Override
@@ -160,17 +163,17 @@ public class EmptyIcon extends JBUI.CachingScalableJBIcon<EmptyIcon> {
 
     final EmptyIcon icon = (EmptyIcon)o;
 
-    if (scaleVal(height, Scale.EFFECTIVE) != icon.scaleVal(icon.height, Scale.EFFECTIVE)) return false;
-    if (scaleVal(width, Scale.EFFECTIVE) != icon.scaleVal(icon.width, Scale.EFFECTIVE)) return false;
+    if (scaleVal(height, PIX_SCALE) != icon.scaleVal(icon.height, PIX_SCALE)) return false;
+    if (scaleVal(width, PIX_SCALE) != icon.scaleVal(icon.width, PIX_SCALE)) return false;
 
     return true;
   }
 
   @Override
   public int hashCode() {
-    int result = scaleVal(width, Scale.EFFECTIVE);
-    result = 31 * result + scaleVal(height, Scale.EFFECTIVE);
-    return result;
+    double result = scaleVal(width, PIX_SCALE);
+    result = 31 * result + scaleVal(height, PIX_SCALE);
+    return (int)result;
   }
 
   public EmptyIconUIResource asUIResource() {

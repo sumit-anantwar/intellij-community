@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInspection;
 
 import com.intellij.codeInsight.daemon.GroupNames;
@@ -43,7 +29,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Collection;
 import java.util.Map;
 
-public class LambdaCanBeMethodReferenceInspection extends BaseJavaBatchLocalInspectionTool {
+public class LambdaCanBeMethodReferenceInspection extends AbstractBaseJavaLocalInspectionTool {
   private static final Logger LOG = Logger.getInstance(LambdaCanBeMethodReferenceInspection.class);
 
 
@@ -265,7 +251,9 @@ public class LambdaCanBeMethodReferenceInspection extends BaseJavaBatchLocalInsp
       return null;
     }
     if (expression instanceof PsiNewExpression) {
-      return new MethodReferenceCandidate(expression, checkQualifier(((PsiNewExpression)expression).getQualifier()), true);
+      PsiExpression qualifier = ((PsiNewExpression)expression).getQualifier();
+      if (qualifier != null) return null;
+      return new MethodReferenceCandidate(expression, true, true);
     }
     else if (expression instanceof PsiMethodCallExpression) {
       return new MethodReferenceCandidate(expression,
@@ -451,7 +439,7 @@ public class LambdaCanBeMethodReferenceInspection extends BaseJavaBatchLocalInsp
     String classOrPrimitiveName = null;
     if (containingClass != null) {
       classOrPrimitiveName = getClassReferenceName(containingClass);
-    } 
+    }
     else if (newExprType instanceof PsiArrayType){
       final PsiType deepComponentType = newExprType.getDeepComponentType();
       if (deepComponentType instanceof PsiPrimitiveType) {
@@ -474,7 +462,7 @@ public class LambdaCanBeMethodReferenceInspection extends BaseJavaBatchLocalInsp
   private static String getQualifierTextByMethodCall(final PsiMethodCallExpression methodCall,
                                                      final PsiType functionalInterfaceType,
                                                      final PsiVariable[] parameters,
-                                                     final PsiMethod psiMethod, 
+                                                     final PsiMethod psiMethod,
                                                      final PsiSubstitutor substitutor) {
 
     final PsiExpression qualifierExpression = methodCall.getMethodExpression().getQualifierExpression();

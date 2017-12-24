@@ -56,10 +56,6 @@ public class UpdaterTreeState {
     }
   }
 
-  public boolean isQueuedForSelection(Object element) {
-    return myToSelect.containsKey(element);
-  }
-
   private static void putAll(final Set<Object> source, final Map<Object, Object> target) {
     for (Object o : source) {
       target.put(o, o);
@@ -164,8 +160,7 @@ public class UpdaterTreeState {
     final Object[] toExpand = getToExpand();
 
 
-    final Map<Object, Condition> adjusted = new WeakHashMap<>();
-    adjusted.putAll(myAdjustedSelection);
+    final Map<Object, Condition> adjusted = new WeakHashMap<>(myAdjustedSelection);
 
     clearSelection();
     clearExpansion();

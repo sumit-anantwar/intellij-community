@@ -77,7 +77,7 @@ public class JavaFileElementType extends ILightStubFileElementType<PsiJavaFileSt
   }
 
   @Override
-  public ASTNode parseContents(final ASTNode chameleon) {
+  public ASTNode parseContents(@NotNull final ASTNode chameleon) {
     final PsiBuilder builder = JavaParserUtil.createBuilder(chameleon);
     doParse(builder);
     return builder.getTreeBuilt().getFirstChildNode();
@@ -113,6 +113,5 @@ public class JavaFileElementType extends ILightStubFileElementType<PsiJavaFileSt
   }
 
   @Override
-  @SuppressWarnings("LambdaUnfriendlyMethodOverload")
   public void indexStub(@NotNull PsiJavaFileStub stub, @NotNull IndexSink sink) { }
 }

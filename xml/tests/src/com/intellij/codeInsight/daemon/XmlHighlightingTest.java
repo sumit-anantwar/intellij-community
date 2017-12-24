@@ -954,18 +954,6 @@ public class XmlHighlightingTest extends DaemonAnalyzerTestCase {
     }
   }
 
-  @Override
-  protected LocalInspectionTool[] configureLocalInspectionTools() {
-    return new LocalInspectionTool[]{
-      new RequiredAttributesInspection(),
-      new XmlDuplicatedIdInspection(),
-      new XmlInvalidIdInspection(),
-      new CheckDtdReferencesInspection(),
-      new XmlUnboundNsPrefixInspection(),
-      new XmlPathReferenceInspection()
-    };
-  }
-
   @HighlightingFlags({HighlightingFlag.SkipExternalValidation})
   public void testXsltValidation() throws Exception {
     doTest(getFullRelativeTestName(".xsl"), true, false);
@@ -2106,7 +2094,7 @@ public class XmlHighlightingTest extends DaemonAnalyzerTestCase {
 
   public void testBillionLaughsValidation() {
     configureByFiles(null, BASE_PATH + "BillionLaughs.xml");
-    doDoTest(true, false);
+    doDoTest(false, false);
   }
 
   public void testMaxOccurLimitValidation() {
@@ -2163,6 +2151,29 @@ public class XmlHighlightingTest extends DaemonAnalyzerTestCase {
       },
       true, false
     );
+  }
+
+  public void testMultipleImports() throws Exception {
+    doTest(
+      new VirtualFile[] {
+        getVirtualFile(BASE_PATH + "MultipleImports/agg.xsd"),
+        getVirtualFile(BASE_PATH + "MultipleImports/toimport1.xsd"),
+        getVirtualFile(BASE_PATH + "MultipleImports/toimport2.xsd"),
+      },
+      true, false
+    );
+  }
+
+  @Override
+  protected LocalInspectionTool[] configureLocalInspectionTools() {
+    return new LocalInspectionTool[]{
+      new RequiredAttributesInspection(),
+      new XmlDuplicatedIdInspection(),
+      new XmlInvalidIdInspection(),
+      new CheckDtdReferencesInspection(),
+      new XmlUnboundNsPrefixInspection(),
+      new XmlPathReferenceInspection()
+    };
   }
 
   @Override

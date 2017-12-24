@@ -44,7 +44,6 @@ import java.util.List;
 /**
  * Tests parameter info available via ^P at call sites.
  * <br/>User: dcheryasov
- * Date: Jul 14, 2009 3:42:44 AM
  */
 public class PyParameterInfoTest extends LightMarkedTestCase {
 
@@ -440,13 +439,11 @@ public class PyParameterInfoTest extends LightMarkedTestCase {
 
   // PY-22005
   public void testWithSpecifiedType() {
-    myFixture.copyDirectoryToProject("typing", "");
-
     runWithLanguageLevel(
       LanguageLevel.PYTHON35,
       () -> {
         final int offset = loadTest(1).get("<arg1>").getTextOffset();
-        final String expectedInfo = "a1: str, a2: Optional[str], a3: Union[str, int, None], a4: int, *args: int, **kwargs: int";
+        final String expectedInfo = "a1: str, a2: Optional[str]=None, a3: Union[str, int, None]=None, a4: int, *args: int, **kwargs: int";
 
         feignCtrlP(offset).check(expectedInfo, new String[]{"a1: str, "});
       }
@@ -463,8 +460,6 @@ public class PyParameterInfoTest extends LightMarkedTestCase {
 
   // PY-22004
   public void testMultiResolved() {
-    myFixture.copyDirectoryToProject("typing", "");
-
     runWithLanguageLevel(
       LanguageLevel.PYTHON35,
       () -> {
@@ -480,8 +475,6 @@ public class PyParameterInfoTest extends LightMarkedTestCase {
   }
 
   public void testOverloadsInImportedClass() {
-    myFixture.copyDirectoryToProject("typing", "");
-
     runWithLanguageLevel(
       LanguageLevel.PYTHON35,
       () -> {
@@ -497,8 +490,6 @@ public class PyParameterInfoTest extends LightMarkedTestCase {
   }
 
   public void testOverloadsInImportedModule() {
-    myFixture.copyDirectoryToProject("typing", "");
-
     runWithLanguageLevel(
       LanguageLevel.PYTHON35,
       () -> {
@@ -513,8 +504,6 @@ public class PyParameterInfoTest extends LightMarkedTestCase {
   }
 
   public void testOverloadsWithDifferentNumberOfArgumentsInImportedClass() {
-    myFixture.copyDirectoryToProject("typing", "");
-
     runWithLanguageLevel(
       LanguageLevel.PYTHON35,
       () -> {
@@ -530,8 +519,6 @@ public class PyParameterInfoTest extends LightMarkedTestCase {
   }
 
   public void testOverloadsWithDifferentNumberOfArgumentsInImportedModule() {
-    myFixture.copyDirectoryToProject("typing", "");
-
     runWithLanguageLevel(
       LanguageLevel.PYTHON35,
       () -> {
@@ -708,6 +695,18 @@ public class PyParameterInfoTest extends LightMarkedTestCase {
     );
   }
 
+  // PY-26582
+  public void testStructuralType() {
+    runWithLanguageLevel(
+      LanguageLevel.PYTHON35,
+      () -> {
+        final Map<String, PsiElement> marks = loadTest(1);
+
+        feignCtrlP(marks.get("<arg1>").getTextOffset()).check("p1, p2: int", new String[]{"p1, "});
+      }
+    );
+  }
+
   /**
    * Imitates pressing of Ctrl+P; fails if results are not as expected.
    * @param offset offset of 'cursor' where Ctrl+P is pressed.
@@ -784,6 +783,11 @@ public class PyParameterInfoTest extends LightMarkedTestCase {
     }
 
     @Override
+    public void setupRawUIComponentPresentation(String htmlText) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
     public boolean isUIComponentEnabled() {
       return true;
     }
@@ -817,6 +821,11 @@ public class PyParameterInfoTest extends LightMarkedTestCase {
     @Nullable
     public PsiElement getParameterOwner() {
       return myParameterOwner;
+    }
+
+    @Override
+    public boolean isSingleOverload() {
+      return myItemsToShow.length == 1;
     }
 
     @Override

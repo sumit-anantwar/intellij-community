@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.python;
 
 import com.google.common.collect.Lists;
@@ -23,7 +9,6 @@ import com.intellij.codeInsight.lookup.Lookup;
 import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.codeInsight.lookup.LookupElementBuilder;
 import com.intellij.testFramework.PsiTestUtil;
-import com.jetbrains.python.documentation.PyDocumentationSettings;
 import com.jetbrains.python.documentation.docstrings.DocStringFormat;
 import com.jetbrains.python.fixtures.PyTestCase;
 import com.jetbrains.python.psi.LanguageLevel;
@@ -33,6 +18,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class PythonCompletionTest extends PyTestCase {
 
@@ -240,8 +226,7 @@ public class PythonCompletionTest extends PyTestCase {
   }
 
   public void testWithType() { // PY-4198
-    setLanguageLevel(LanguageLevel.PYTHON26);
-    doTest();
+    runWithLanguageLevel(LanguageLevel.PYTHON26, this::doTest);
   }
 
   public void testChainedCall() {  // PY-1565
@@ -368,52 +353,35 @@ public class PythonCompletionTest extends PyTestCase {
   }
 
   public void testEpydocParamTag() {
-    final PyDocumentationSettings settings = PyDocumentationSettings.getInstance(myFixture.getModule());
-    settings.setFormat(DocStringFormat.EPYTEXT);
-    try {
-      doTest();
-    }
-    finally {
-      settings.setFormat(DocStringFormat.PLAIN);
-    }
+    runWithDocStringFormat(DocStringFormat.EPYTEXT, this::doTest);
   }
 
   public void testEpydocTags() {
-    final PyDocumentationSettings settings = PyDocumentationSettings.getInstance(myFixture.getModule());
-    settings.setFormat(DocStringFormat.EPYTEXT);
-    try {
+    runWithDocStringFormat(DocStringFormat.EPYTEXT, () -> {
       myFixture.configureByFile("epydocTags.py");
       myFixture.completeBasic();
       final List<String> lookupElementStrings = myFixture.getLookupElementStrings();
       assertNotNull(lookupElementStrings);
       assertTrue(lookupElementStrings.contains("@param"));
-    }
-    finally {
-      settings.setFormat(DocStringFormat.PLAIN);
-    }
+    });
   }
 
   public void testEpydocTagsMiddle() {
-    final PyDocumentationSettings settings = PyDocumentationSettings.getInstance(myFixture.getModule());
-    settings.setFormat(DocStringFormat.EPYTEXT);
-    try {
+    runWithDocStringFormat(DocStringFormat.EPYTEXT, () -> {
       myFixture.configureByFile("epydocTagsMiddle.py");
       myFixture.completeBasic();
       myFixture.checkResultByFile("epydocTagsMiddle.after.py");
-    }
-    finally {
-      settings.setFormat(DocStringFormat.PLAIN);
-    }
+    });
   }
 
   public void testIdentifiersInPlainDocstring() {
-    final PyDocumentationSettings settings = PyDocumentationSettings.getInstance(myFixture.getModule());
-    settings.setFormat(DocStringFormat.PLAIN);
-    myFixture.configureByFile("identifiersInPlainDocstring.py");
-    final LookupElement[] elements = myFixture.completeBasic();
-    assertNotNull(elements);
-    assertContainsElements(Lists.newArrayList(elements),
-                           LookupElementBuilder.create("bar").withAutoCompletionPolicy(AutoCompletionPolicy.NEVER_AUTOCOMPLETE));
+    runWithDocStringFormat(DocStringFormat.PLAIN, () -> {
+      myFixture.configureByFile("identifiersInPlainDocstring.py");
+      final LookupElement[] elements = myFixture.completeBasic();
+      assertNotNull(elements);
+      assertContainsElements(Lists.newArrayList(elements),
+                             LookupElementBuilder.create("bar").withAutoCompletionPolicy(AutoCompletionPolicy.NEVER_AUTOCOMPLETE));
+    });
   }
 
   // PY-16877
@@ -743,7 +711,9 @@ public class PythonCompletionTest extends PyTestCase {
                              "C().f.__<caret>");
     assertNotNull(suggested);
     assertContainsElements(suggested, PyNames.METHOD_SPECIAL_ATTRIBUTES);
-    assertDoesntContain(suggested, PyNames.FUNCTION_SPECIAL_ATTRIBUTES);
+    final Set<String> functionAttributes = new HashSet<>(PyNames.FUNCTION_SPECIAL_ATTRIBUTES);
+    functionAttributes.removeAll(PyNames.METHOD_SPECIAL_ATTRIBUTES);
+    assertDoesntContain(suggested, functionAttributes);
   }
 
   // PY-9342
@@ -755,7 +725,9 @@ public class PythonCompletionTest extends PyTestCase {
     final List<String> suggested = doTestByFile();
     assertNotNull(suggested);
     assertContainsElements(suggested, PyNames.METHOD_SPECIAL_ATTRIBUTES);
-    assertDoesntContain(suggested, PyNames.FUNCTION_SPECIAL_ATTRIBUTES);
+    final Set<String> functionAttributes = new HashSet<>(PyNames.FUNCTION_SPECIAL_ATTRIBUTES);
+    functionAttributes.removeAll(PyNames.METHOD_SPECIAL_ATTRIBUTES);
+    assertDoesntContain(suggested, functionAttributes);
   }
 
   // PY-9342
@@ -788,7 +760,9 @@ public class PythonCompletionTest extends PyTestCase {
     final List<String> suggested = doTestByFile();
     assertNotNull(suggested);
     assertContainsElements(suggested, PyNames.FUNCTION_SPECIAL_ATTRIBUTES);
-    assertDoesntContain(suggested, PyNames.METHOD_SPECIAL_ATTRIBUTES);
+    final Set<String> methodAttributes = new HashSet<>(PyNames.METHOD_SPECIAL_ATTRIBUTES);
+    methodAttributes.removeAll(PyNames.FUNCTION_SPECIAL_ATTRIBUTES);
+    assertDoesntContain(suggested, methodAttributes);
   }
 
   public void testSmartFromUsedMethodsOfString() {
@@ -1201,6 +1175,28 @@ public class PythonCompletionTest extends PyTestCase {
   // PY-8132
   public void testOuterCompletionVariantDoesNotOverwriteClosestOne() {
     doTest();
+  }
+
+  // PY-15365
+  public void testModulesAndPackagesInDunderAll() {
+    myFixture.copyDirectoryToProject(getTestName(true), "");
+    myFixture.configureByFile("a.py");
+    myFixture.completeBasic();
+    final List<String> suggested = myFixture.getLookupElementStrings();
+    assertNotNull(suggested);
+    assertSameElements(suggested, "m1", "m2", "m3", "m4");
+  }
+
+  // PY-26978
+  public void testTupleParameterNamesNotSuggested() {
+    final List<String> variants = doTestByFile();
+    assertContainsElements(variants, "baz=");
+    assertDoesntContain(variants, "bar=");
+  }
+
+  // PY-27146
+  public void testPrivateMemberOwnerResolvedToStub() {
+    doMultiFileTest();
   }
 
   @Override

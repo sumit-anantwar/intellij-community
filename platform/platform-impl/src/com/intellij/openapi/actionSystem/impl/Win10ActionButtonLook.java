@@ -16,6 +16,7 @@
 package com.intellij.openapi.actionSystem.impl;
 
 import com.intellij.openapi.actionSystem.ex.ActionButtonLook;
+import com.intellij.ui.Gray;
 import com.intellij.util.ui.JBInsets;
 import com.intellij.util.ui.JBUI;
 
@@ -39,10 +40,10 @@ public class Win10ActionButtonLook extends ActionButtonLook {
   private static Color getBackgroundColorForState(int state) {
     switch (state) {
       case POPPED:
-        return UIManager.getColor("Button.intellij.native.focusedBackgroundColor");
+        return Gray.xE8;
       case PUSHED:
       case SELECTED:
-        return UIManager.getColor("Button.intellij.native.pressedBackgroundColor");
+        return Gray.xDB;
       default:
         return UIManager.getColor("Button.background");
     }
@@ -55,13 +56,13 @@ public class Win10ActionButtonLook extends ActionButtonLook {
         g2.setColor(getBorderColorForState(state));
 
         Rectangle outerRect = new Rectangle(component.getSize());
-        JBInsets.removeFrom(outerRect, component.getInsets());
-
-        Path2D border = new Path2D.Double(Path2D.WIND_EVEN_ODD);
-        border.append(outerRect, false);
+        JBInsets.removeFrom(outerRect, JBUI.insets(1));
 
         Rectangle innerRect = new Rectangle(outerRect);
         JBInsets.removeFrom(innerRect, JBUI.insets(1));
+
+        Path2D border = new Path2D.Double(Path2D.WIND_EVEN_ODD);
+        border.append(outerRect, false);
         border.append(innerRect, false);
 
         g2.fill(border);
@@ -72,16 +73,16 @@ public class Win10ActionButtonLook extends ActionButtonLook {
   }
 
   @Override public Insets getInsets() {
-    return JBUI.insets(1);
+    return JBUI.insets(2, 1);
   }
 
   private static Color getBorderColorForState(int state) {
     switch (state) {
       case POPPED:
-        return UIManager.getColor("Button.intellij.native.focusedBorderColor");
+        return Gray.xCC;
       case PUSHED:
       case SELECTED:
-        return UIManager.getColor("Button.intellij.native.pressedBorderColor");
+        return Gray.xC4;
       default:
         return UIManager.getColor("Button.intellij.native.borderColor");
     }

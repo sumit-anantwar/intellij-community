@@ -52,6 +52,7 @@ import com.intellij.refactoring.listeners.RefactoringElementListener
 import com.intellij.refactoring.listeners.UndoRefactoringElementAdapter
 import com.intellij.util.ThreeState
 import com.jetbrains.extensions.getQName
+import com.jetbrains.extenstions.ModuleBasedContextAnchor
 import com.jetbrains.extenstions.QNameResolveContext
 import com.jetbrains.extenstions.getElementAndResolvableName
 import com.jetbrains.extenstions.resolveToElement
@@ -60,14 +61,14 @@ import com.jetbrains.python.psi.PyFile
 import com.jetbrains.python.psi.PyFunction
 import com.jetbrains.python.psi.PyQualifiedNameOwner
 import com.jetbrains.python.psi.types.TypeEvalContext
-import com.jetbrains.python.run.AbstractPythonRunConfiguration
-import com.jetbrains.python.run.CommandLinePatcher
-import com.jetbrains.python.run.PythonConfigurationFactoryBase
-import com.jetbrains.python.run.PythonRunConfiguration
+import com.jetbrains.python.run.*
 import com.jetbrains.reflection.DelegationProperty
 import com.jetbrains.reflection.Properties
 import com.jetbrains.reflection.Property
 import com.jetbrains.reflection.getProperties
+import jetbrains.buildServer.messages.serviceMessages.ServiceMessage
+import jetbrains.buildServer.messages.serviceMessages.TestStdErr
+import jetbrains.buildServer.messages.serviceMessages.TestStdOut
 
 
 /**
@@ -78,6 +79,19 @@ val factories: Array<PythonConfigurationFactoryBase> = arrayOf(
   PyTestFactory,
   PyNoseTestFactory,
   PyTrialTestFactory)
+
+/**
+ * Accepts text that may be wrapped in TC message. Unwarps it and removes TC escape code.
+ * Regular text is unchanged
+ */
+fun processTCMessage(text: String): String {
+  val parsedMessage = ServiceMessage.parse(text.trim()) ?: return text // Not a TC message
+  return when (parsedMessage) {
+    is TestStdOut  -> parsedMessage.stdOut // TC with stdout
+    is TestStdErr -> parsedMessage.stdErr // TC with stderr
+    else -> "" // TC with out of any output
+  }
+}
 
 internal fun getAdditionalArgumentsPropertyName() = com.jetbrains.python.testing.PyAbstractTestConfiguration::additionalArguments.name
 
@@ -166,7 +180,7 @@ object PyTestsLocator : SMTestLocator {
     //TODO: Doc we will not bae able to resolve if different SDK
     val qualifiedName = QualifiedName.fromDottedString(path)
     // Assume qname id good and resolve it directly
-    val element = qualifiedName.resolveToElement(QNameResolveContext(scope.module,
+    val element = qualifiedName.resolveToElement(QNameResolveContext(ModuleBasedContextAnchor(scope.module),
                                                                      evalContext = TypeEvalContext.codeAnalysis(
                                                                        project,
                                                                        null),
@@ -222,8 +236,10 @@ abstract class PyAbstractTestSettingsEditor(private val sharedForm: PyTestShared
   override fun createEditor(): javax.swing.JComponent = sharedForm.panel
 }
 
-enum class TestTargetType {
-  PYTHON, PATH, CUSTOM
+enum class TestTargetType(private val customName: String? = null) {
+  PYTHON(PythonRunConfigurationForm.MODULE_NAME), PATH(PythonRunConfigurationForm.SCRIPT_PATH), CUSTOM;
+
+  fun getCustomName() = customName ?: name
 }
 
 /**
@@ -247,7 +263,10 @@ data class ConfigurationTarget(@ConfigField var target: String,
    */
   fun checkValid() {
     if (targetType != TestTargetType.CUSTOM && target.isEmpty()) {
-      throw RuntimeConfigurationWarning("Target should be set for anything but custom")
+      throw RuntimeConfigurationWarning("Target not provided")
+    }
+    if (targetType == TestTargetType.PYTHON && !Regex("^[a-zA-Z0-9._]+[a-zA-Z0-9_]$").matches(target)) {
+      throw RuntimeConfigurationWarning("Provide a qualified name of function, class or a module")
     }
   }
 
@@ -260,7 +279,7 @@ data class ConfigurationTarget(@ConfigField var target: String,
       val context = TypeEvalContext.userInitiated(configuration.project, null)
       val workDir = configuration.getWorkingDirectoryAsVirtual()
       val name = QualifiedName.fromDottedString(target)
-      return name.resolveToElement(QNameResolveContext(module, configuration.sdk, context, workDir, true))
+      return name.resolveToElement(QNameResolveContext(ModuleBasedContextAnchor(module), configuration.sdk, context, workDir, true))
     }
     return null
   }
@@ -285,7 +304,7 @@ data class ConfigurationTarget(@ConfigField var target: String,
   private fun getArgumentsForPythonTarget(configuration: PyAbstractTestConfiguration): List<String> {
     val element = asPsiElement(configuration) ?:
                   throw ExecutionException(
-                    "Can't resolve $target. Try to remove configuration and generate is again")
+                    "Can't resolve $target. Try to remove configuration and generate it again")
 
     if (element is PsiDirectory) {
       // Directory is special case: we can't run it as package for now, so we run it as path
@@ -294,7 +313,7 @@ data class ConfigurationTarget(@ConfigField var target: String,
 
     val context = TypeEvalContext.userInitiated(configuration.project, null)
     val qNameResolveContext = QNameResolveContext(
-      module = configuration.module!!,
+      contextAnchor = ModuleBasedContextAnchor(configuration.module!!),
       evalContext = context,
       folderToStart = LocalFileSystem.getInstance().findFileByPath(configuration.workingDirectorySafe),
       allowInaccurateResult = true
@@ -385,6 +404,18 @@ abstract class PyAbstractTestConfiguration(project: Project,
   var additionalArguments = ""
 
   val testFrameworkName = configurationFactory.name!!
+
+
+  /**
+   * @see [RunnersThatRequireTestCaseClass]
+   */
+  fun isTestClassRequired() = if (RunnersThatRequireTestCaseClass.contains(runnerName)) {
+    ThreeState.YES
+  }
+  else {
+    ThreeState.NO
+  }
+
 
   @Suppress("LeakingThis") // Legacy adapter is used to support legacy configs. Leak is ok here since everything takes place in one thread
   @DelegationProperty
@@ -617,13 +648,7 @@ abstract class PyAbstractTestConfiguration(project: Project,
     // TODO: PythonUnitTestUtil logic is weak. We should give user ability to launch test on symbol since user knows better if folder
     // contains tests etc
     val context = TypeEvalContext.userInitiated(element.project, element.containingFile)
-    val testCaseClassRequired: ThreeState = if (RunnersThatRequireTestCaseClass.contains(runnerName)) {
-      ThreeState.YES
-    }
-    else {
-      ThreeState.NO
-    }
-    return isTestElement(element, testCaseClassRequired, context)
+    return isTestElement(element,isTestClassRequired(), context)
   }
 
   /**
@@ -676,8 +701,12 @@ object PyTestsConfigurationProducer : AbstractPythonTestConfigurationProducer<Py
   override fun setupConfigurationFromContext(configuration: PyAbstractTestConfiguration?,
                                              context: ConfigurationContext?,
                                              sourceElement: Ref<PsiElement>?): Boolean {
-
     if (sourceElement == null || configuration == null) {
+      return false
+    }
+    val element = sourceElement.get() ?: return false
+
+    if (element.containingFile !is PyFile && element !is PsiDirectory) {
       return false
     }
 
@@ -689,7 +718,7 @@ object PyTestsConfigurationProducer : AbstractPythonTestConfigurationProducer<Py
     }
     else {
       val targetForConfig = PyTestsConfigurationProducer.getTargetForConfig(configuration,
-                                                                            sourceElement.get()) ?: return false
+                                                                            element) ?: return false
       targetForConfig.first.copyTo(configuration.target)
       // Directory may be set in Default configuration. In that case no need to rewrite it.
       if (configuration.workingDirectory.isNullOrEmpty()) {
@@ -735,7 +764,7 @@ object PyTestsConfigurationProducer : AbstractPythonTestConfigurationProducer<Py
 
             val elementFile = element.containingFile as? PyFile ?: return null
             val workingDirectory = getDirectoryForFileToBeImportedFrom(elementFile) ?: return null
-            val context = QNameResolveContext(module,
+            val context = QNameResolveContext(ModuleBasedContextAnchor(module),
                                               evalContext = TypeEvalContext.userInitiated(configuration.project,
                                                                                           null),
                                               folderToStart = workingDirectory.virtualFile)
@@ -779,7 +808,6 @@ object PyTestsConfigurationProducer : AbstractPythonTestConfigurationProducer<Py
     return configuration.target == targetForConfig.first
   }
 }
-
 
 @Retention(AnnotationRetention.RUNTIME)
 @Target(AnnotationTarget.PROPERTY)

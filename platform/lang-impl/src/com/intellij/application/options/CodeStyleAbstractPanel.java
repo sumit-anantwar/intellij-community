@@ -21,6 +21,7 @@ import com.intellij.lang.Language;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationBundle;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.TransactionGuard;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.*;
@@ -164,6 +165,7 @@ public abstract class CodeStyleAbstractPanel implements Disposable {
     editorSettings.setAdditionalColumnsCount(0);
     editorSettings.setAdditionalLinesCount(1);
     editorSettings.setUseSoftWraps(false);
+    editorSettings.setSoftMargins(Collections.emptyList());
   }
 
   protected void updatePreview(boolean useDefaultSample) {
@@ -177,21 +179,24 @@ public abstract class CodeStyleAbstractPanel implements Disposable {
       return;
     }
 
-    if (myLastDocumentModificationStamp != myEditor.getDocument().getModificationStamp()) {
-      myTextToReformat = myEditor.getDocument().getText();
-    }
-    else if (useDefaultSample || myTextToReformat == null) {
-      myTextToReformat = getPreviewText();
-    }
+    Project project = ProjectUtil.guessCurrentProject(getPanel());
+    TransactionGuard.submitTransaction(project, () -> {
+      if (myEditor.isDisposed()) return;
+      
+      if (myLastDocumentModificationStamp != myEditor.getDocument().getModificationStamp()) {
+        myTextToReformat = myEditor.getDocument().getText();
+      }
+      else if (useDefaultSample || myTextToReformat == null) {
+        myTextToReformat = getPreviewText();
+      }
 
-    int currOffs = myEditor.getScrollingModel().getVerticalScrollOffset();
+      int currOffs = myEditor.getScrollingModel().getVerticalScrollOffset();
+      CommandProcessor.getInstance().executeCommand(project, () -> replaceText(project), null, null);
 
-    final Project finalProject = ProjectUtil.guessCurrentProject(getPanel());
-    CommandProcessor.getInstance().executeCommand(finalProject, () -> replaceText(finalProject), null, null);
-
-    myEditor.getSettings().setRightMargin(getAdjustedRightMargin());
-    myLastDocumentModificationStamp = myEditor.getDocument().getModificationStamp();
-    myEditor.getScrollingModel().scrollVertically(currOffs);
+      myEditor.getSettings().setRightMargin(getAdjustedRightMargin());
+      myLastDocumentModificationStamp = myEditor.getDocument().getModificationStamp();
+      myEditor.getScrollingModel().scrollVertically(currOffs);
+    });
   }
 
   private int getAdjustedRightMargin() {
@@ -210,6 +215,7 @@ public abstract class CodeStyleAbstractPanel implements Disposable {
         }
 
         //important not mark as generated not to get the classes before setting language level
+        @SuppressWarnings("deprecation")
         PsiFile psiFile = createFileFromText(project, myTextToReformat);
         prepareForReformat(psiFile);
 
@@ -259,6 +265,7 @@ public abstract class CodeStyleAbstractPanel implements Disposable {
    */
   @Nullable
   private Document collectChangesBeforeCurrentSettingsAppliance(Project project) {
+    @SuppressWarnings("deprecation")
     PsiFile psiFile = createFileFromText(project, myTextToReformat);
     prepareForReformat(psiFile);
     CodeStyleSettings clone = mySettings.clone();
@@ -295,7 +302,25 @@ public abstract class CodeStyleAbstractPanel implements Disposable {
     return getFileTypeExtension(getFileType());
   }
 
+  /**
+   * @deprecated Do not override this method. Use LanguageCodeStyleSettingsProvider.createFileFromText() instead.
+   * @see LanguageCodeStyleSettingsProvider#createFileFromText(Project, String)
+   */
+  @Deprecated
   protected PsiFile createFileFromText(Project project, String text) {
+    Language language = getDefaultLanguage();
+    if (language != null) {
+      LanguageCodeStyleSettingsProvider provider = LanguageCodeStyleSettingsProvider.forLanguage(language);
+      if (provider != null) {
+        final PsiFile file = provider.createFileFromText(project, text);
+        if (file != null) {
+          if (file.isPhysical()) {
+            LOG.error(provider.getClass() + " creates a physical file with PSI events enabled");
+          }
+          return file;
+        }
+      }
+    }
     return PsiFileFactory.getInstance(project).createFileFromText(
       "a." + getFileExt(), getFileType(), text, LocalTimeCounter.currentTime(), false
     );

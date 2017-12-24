@@ -34,7 +34,6 @@ import java.util.*;
 
 /**
  * @author max
- * Date: Mar 22, 2002
  */
 public class DefUseUtil {
   private static final Logger LOG = Logger.getInstance("#com.intellij.codeInspection.defUse.DefUseUtil");
@@ -244,7 +243,7 @@ public class DefUseUtil {
         if (!usefulWrites.get(i)) {
           PsiElement context = PsiTreeUtil.getNonStrictParentOfType(flow.getElement(i),
                                                                     PsiStatement.class, PsiAssignmentExpression.class,
-                                                                    PsiPostfixExpression.class, PsiPrefixExpression.class);
+                                                                    PsiUnaryExpression.class);
           PsiVariable psiVariable = writeInstruction.variable;
           if (context != null && !(context instanceof PsiTryStatement)) {
             if (context instanceof PsiDeclarationStatement && psiVariable.getInitializer() == null) {

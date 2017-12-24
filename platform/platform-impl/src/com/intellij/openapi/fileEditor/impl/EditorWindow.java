@@ -1,17 +1,5 @@
 /*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
  */
 package com.intellij.openapi.fileEditor.impl;
 
@@ -22,6 +10,8 @@ import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.DataKey;
 import com.intellij.openapi.actionSystem.DataProvider;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.TransactionGuard;
+import com.intellij.openapi.application.TransactionGuardImpl;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.ScrollType;
@@ -285,6 +275,8 @@ public class EditorWindow {
       }
       finally {
         editorManager.removeSelectionRecord(file, this);
+
+        ((TransactionGuardImpl)TransactionGuard.getInstance()).assertWriteActionAllowed();
 
         editorManager.notifyPublisher(() -> {
           final Project project = editorManager.getProject();
@@ -583,9 +575,17 @@ public class EditorWindow {
   }
 
   public EditorWithProviderComposite getSelectedEditor() {
+    return getSelectedEditor(false);
+  }
+
+  /**
+   * @param ignorePopup if <code>false</code> and context menu is shown currently for some tab, 
+   *                    editor for which menu is invoked will be returned
+   */
+  public EditorWithProviderComposite getSelectedEditor(boolean ignorePopup) {
     final TComp comp;
     if (myTabbedPane != null) {
-      comp = (TComp)myTabbedPane.getSelectedComponent();
+      comp = (TComp)myTabbedPane.getSelectedComponent(ignorePopup);
     }
     else if (myPanel.getComponentCount() != 0) {
       final Component component = myPanel.getComponent(0);
@@ -770,9 +770,13 @@ public class EditorWindow {
           panel.revalidate();
           final VirtualFile firstFile = firstEC.getFile();
           final VirtualFile nextFile = virtualFile == null ? firstFile : virtualFile;
-          final FileEditor[] firstEditors = fileEditorManager.openFileImpl3(this, firstFile, !focusNew, null, true).first;
+          HistoryEntry currentState = firstEC.currentStateAsHistoryEntry();
+
+          fileEditorManager.disposeComposite(firstEC);
+
+          final FileEditor[] firstEditors = fileEditorManager.openFileImpl3(this, firstFile, !focusNew, currentState, true).first;
           syncCaretIfPossible(firstEditors);
-          final FileEditor[] secondEditors = fileEditorManager.openFileImpl3(res, nextFile, focusNew, null, true).first;
+          final FileEditor[] secondEditors = fileEditorManager.openFileImpl3(res, nextFile, focusNew, currentState, true).first;
           syncCaretIfPossible(secondEditors);
         }
         return res;
@@ -1194,6 +1198,8 @@ public class EditorWindow {
   }
 
   public void clear() {
+    ((TransactionGuardImpl)TransactionGuard.getInstance()).assertWriteActionAllowed();
+    
     FileEditorManagerImpl manager = getManager();
     FileEditorManagerListener.Before beforePublisher = 
       manager.getProject().getMessageBus().syncPublisher(FileEditorManagerListener.Before.FILE_EDITOR_MANAGER);

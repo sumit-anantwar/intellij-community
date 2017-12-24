@@ -21,7 +21,6 @@ import com.intellij.codeInspection.dataFlow.value.DfaUnknownValue;
 import com.intellij.codeInspection.dataFlow.value.DfaValue;
 import com.intellij.codeInspection.dataFlow.value.DfaValueFactory;
 import com.intellij.psi.*;
-import com.intellij.psi.impl.light.LightVariableBuilder;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.PsiUtil;
 import com.intellij.util.ObjectUtils;
@@ -385,11 +384,11 @@ public class CFGBuilder {
    * this is not satisfied. Stack is unchanged.
    *
    * @param expression an anchor expression to bind a warning to
-   * @param problem a type of nullability problem to report if value is nullable
+   * @param kind a type of nullability problem to report if value is nullable
    * @return this builder
    */
-  public CFGBuilder checkNotNull(PsiExpression expression, NullabilityProblem problem) {
-    myAnalyzer.addInstruction(new CheckNotNullInstruction(expression, problem));
+  public <T extends PsiElement> CFGBuilder checkNotNull(T expression, NullabilityProblemKind<T> kind) {
+    myAnalyzer.addInstruction(new CheckNotNullInstruction(kind.problem(expression)));
     return this;
   }
 
@@ -449,7 +448,7 @@ public class CFGBuilder {
         PsiVariable qualifierBinding = createTempVariable(qualifier.getType());
         pushVariable(qualifierBinding)
           .pushExpression(qualifier)
-          .checkNotNull(qualifier, NullabilityProblem.fieldAccessNPE)
+          .checkNotNull(qualifier, NullabilityProblemKind.fieldAccessNPE)
           .assign()
           .pop();
         myMethodRefQualifiers.put(methodRef, qualifierBinding);
@@ -457,7 +456,7 @@ public class CFGBuilder {
       return this;
     }
     return pushExpression(functionalExpression)
-      .checkNotNull(functionalExpression, NullabilityProblem.passingNullableToNotNullParameter)
+      .checkNotNull(functionalExpression, NullabilityProblemKind.passingNullableToNotNullParameter)
       .pop();
   }
 
@@ -499,6 +498,7 @@ public class CFGBuilder {
       JavaResolveResult resolveResult = methodRef.advancedResolve(false);
       PsiMethod method = ObjectUtils.tryCast(resolveResult.getElement(), PsiMethod.class);
       if (method != null && !method.isVarArgs()) {
+        if (processKnownMethodReference(argCount, methodRef, method)) return this;
         int expectedArgCount = method.getParameterList().getParametersCount();
         boolean pushQualifier = true;
         if (!method.hasModifierProperty(PsiModifier.STATIC) && !method.isConstructor()) {
@@ -519,7 +519,7 @@ public class CFGBuilder {
           myAnalyzer.generateBoxingUnboxingInstructionFor(methodRef, resolveResult.getSubstitutor().substitute(method.getReturnType()),
                                                           LambdaUtil.getFunctionalInterfaceReturnType(methodRef));
           if (resultNullness == Nullness.NOT_NULL) {
-            checkNotNull(methodRef, NullabilityProblem.nullableFunctionReturn);
+            checkNotNull(methodRef, NullabilityProblemKind.nullableFunctionReturn);
           }
           return this;
         }
@@ -549,6 +549,17 @@ public class CFGBuilder {
     return this;
   }
 
+  private boolean processKnownMethodReference(int argCount, PsiMethodReferenceExpression methodRef, PsiMethod method) {
+    if (argCount != 1 || !method.getName().equals("isInstance")) return false;
+    PsiClassObjectAccessExpression qualifier = ObjectUtils.tryCast(PsiUtil.skipParenthesizedExprDown(methodRef.getQualifierExpression()),
+                                                                   PsiClassObjectAccessExpression.class);
+    if (qualifier == null) return false;
+    PsiType type = qualifier.getOperand().getType();
+    push(getFactory().createTypeValue(type, Nullness.NOT_NULL));
+    myAnalyzer.addInstruction(new InstanceofInstruction(methodRef, methodRef.getProject(), null, type));
+    return true;
+  }
+
   /**
    * Generate instructions to move top stack value to the specified depth
    * <p>
@@ -568,8 +579,33 @@ public class CFGBuilder {
     }
   }
 
+  /**
+   * Inlines given lambda. Lambda parameters are assumed to be assigned already (if necessary).
+   * <p>
+   * Stack before: ...
+   * <p>
+   * Stack after: ... lambdaResult
+   *
+   * @param lambda lambda to inline
+   * @param resultNullness a required return value nullness
+   * @return this builder
+   */
   public CFGBuilder inlineLambda(PsiLambdaExpression lambda, Nullness resultNullness) {
-    myAnalyzer.inlineLambda(lambda, resultNullness);
+    PsiElement body = lambda.getBody();
+    PsiExpression expression = LambdaUtil.extractSingleExpressionFromBody(body);
+    if (expression != null) {
+      pushExpression(expression);
+      boxUnbox(expression, LambdaUtil.getFunctionalInterfaceReturnType(lambda));
+      if(resultNullness == Nullness.NOT_NULL) {
+        checkNotNull(expression, NullabilityProblemKind.nullableFunctionReturn);
+      }
+    } else if(body instanceof PsiCodeBlock) {
+      PsiVariable variable = createTempVariable(LambdaUtil.getFunctionalInterfaceReturnType(lambda));
+      myAnalyzer.inlineBlock((PsiCodeBlock)body, resultNullness, variable);
+      push(getFactory().getVarFactory().createVariableValue(variable, false));
+    } else {
+      pushUnknown();
+    }
     return this;
   }
 
@@ -581,10 +617,7 @@ public class CFGBuilder {
    */
   @NotNull
   public PsiVariable createTempVariable(@Nullable PsiType type) {
-    if(type == null) {
-      type = PsiType.VOID;
-    }
-    return new TempVariable(myAnalyzer.getInstructionCount(), type, myAnalyzer.getContext());
+    return myAnalyzer.createTempVariable(type);
   }
 
   /**
@@ -596,21 +629,5 @@ public class CFGBuilder {
   public CFGBuilder chain(Consumer<CFGBuilder> operation) {
     operation.accept(this);
     return this;
-  }
-
-  /**
-   * Checks whether supplied variable is a temporary variable created previously via {@link #createTempVariable(PsiType)}
-   *
-   * @param variable to check
-   * @return true if supplied variable is a temp variable.
-   */
-  public static boolean isTempVariable(PsiModifierListOwner variable) {
-     return variable instanceof TempVariable;
-  }
-
-  private static class TempVariable extends LightVariableBuilder<TempVariable> {
-    TempVariable(int index, @NotNull PsiType type, @NotNull PsiElement navigationElement) {
-      super("tmp$" + index, type, navigationElement);
-    }
   }
 }

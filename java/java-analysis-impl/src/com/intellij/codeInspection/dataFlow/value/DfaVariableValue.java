@@ -40,6 +40,7 @@ public class DfaVariableValue extends DfaValue {
       myFactory = factory;
     }
 
+    @NotNull
     public DfaVariableValue createVariableValue(PsiVariable myVariable, boolean isNegated) {
       PsiType varType = myVariable.getType();
       if (varType instanceof PsiEllipsisType) {
@@ -78,7 +79,7 @@ public class DfaVariableValue extends DfaValue {
   private DfaVariableValue myNegatedValue;
   private final boolean myIsNegated;
   private DfaFactMap myInherentFacts;
-  private final DfaTypeValue myTypeValue;
+  private final DfaPsiType myDfaType;
   private final List<DfaVariableValue> myDependents = new SmartList<>();
 
   private DfaVariableValue(@NotNull PsiModifierListOwner variable, @Nullable PsiType varType, boolean isNegated, DfaValueFactory factory, @Nullable DfaVariableValue qualifier) {
@@ -87,16 +88,15 @@ public class DfaVariableValue extends DfaValue {
     myIsNegated = isNegated;
     myQualifier = qualifier;
     myVarType = varType;
-    DfaValue typeValue = myFactory.createTypeValue(varType, Nullness.UNKNOWN);
-    myTypeValue = typeValue instanceof DfaTypeValue ? (DfaTypeValue)typeValue : null;
+    myDfaType = varType == null ? null : myFactory.createDfaType(varType);
     if (varType != null && !varType.isValid()) {
       PsiUtil.ensureValidType(varType, "Variable: " + variable + " of class " + variable.getClass());
     }
   }
 
   @Nullable
-  public DfaTypeValue getTypeValue() {
-    return myTypeValue;
+  public DfaPsiType getDfaType() {
+    return myDfaType;
   }
 
   @NotNull
@@ -132,7 +132,7 @@ public class DfaVariableValue extends DfaValue {
   }
 
   private boolean hardEquals(PsiModifierListOwner psiVar, PsiType varType, boolean negated, DfaVariableValue qualifier) {
-    return psiVar == myVariable &&
+    return (psiVar == myVariable || SpecialField.ARRAY_LENGTH.isMyAccessor(psiVar) && SpecialField.ARRAY_LENGTH.isMyAccessor(myVariable)) &&
            negated == myIsNegated &&
            qualifier == myQualifier &&
            Comparing.equal(TypeConversionUtil.erasure(varType), TypeConversionUtil.erasure(myVarType));
@@ -157,7 +157,7 @@ public class DfaVariableValue extends DfaValue {
   }
 
   public boolean isFlushableByCalls() {
-    if (myVariable instanceof PsiLocalVariable || myVariable instanceof PsiParameter || CFGBuilder.isTempVariable(myVariable)) {
+    if (myVariable instanceof PsiLocalVariable || myVariable instanceof PsiParameter || ControlFlowAnalyzer.isTempVariable(myVariable)) {
       return false;
     }
     boolean finalField = myVariable instanceof PsiVariable && myVariable.hasModifierProperty(PsiModifier.FINAL);

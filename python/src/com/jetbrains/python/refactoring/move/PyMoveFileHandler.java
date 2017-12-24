@@ -142,12 +142,12 @@ public class PyMoveFileHandler extends MoveFileHandler {
   }
 
   private static boolean canBeRelative(@NotNull PyFromImportStatement statement) {
-    return !LanguageLevel.forElement(statement).isPy3K() || statement.getRelativeLevel() > 0;
+    return LanguageLevel.forElement(statement).isPython2() || statement.getRelativeLevel() > 0;
   }
 
 
   private static boolean canBeRelative(@NotNull PyImportElement statement) {
-    return !LanguageLevel.forElement(statement).isPy3K();
+    return LanguageLevel.forElement(statement).isPython2();
   }
 
   /**
@@ -281,7 +281,7 @@ public class PyMoveFileHandler extends MoveFileHandler {
       }
     }
     if (!updatedFiles.isEmpty()) {
-      final PyImportOptimizer optimizer = new PyImportOptimizer();
+      final PyImportOptimizer optimizer = PyImportOptimizer.onlyRemoveUnused();
       for (PsiFile file : updatedFiles) {
         final boolean injectedFragment = InjectedLanguageManager.getInstance(file.getProject()).isInjectedFragment(file);
         if (!injectedFragment) {

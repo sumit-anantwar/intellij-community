@@ -1,18 +1,6 @@
-/*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o.
+// Use of this source code is governed by the Apache 2.0 license that can be
+// found in the LICENSE file.
 
 package com.intellij.psi.impl;
 
@@ -323,12 +311,13 @@ public abstract class PsiDocumentManagerBase extends PsiDocumentManager implemen
 
   private boolean isEventSystemEnabled(Document document) {
     FileViewProvider viewProvider = getCachedViewProvider(document);
-    return viewProvider != null && viewProvider.isEventSystemEnabled() && !SingleRootFileViewProvider.isFreeThreaded(viewProvider);
+    return viewProvider != null && viewProvider.isEventSystemEnabled() && !AbstractFileViewProvider.isFreeThreaded(viewProvider);
   }
 
   // public for Upsource
   public boolean finishCommit(@NotNull final Document document,
                               @NotNull final List<Processor<Document>> finishProcessors,
+                              @NotNull ProperTextRange changedRange,
                               final boolean synchronously,
                               @NotNull final Object reason) {
     assert !myProject.isDisposed() : "Already disposed";
@@ -350,7 +339,7 @@ public abstract class PsiDocumentManagerBase extends PsiDocumentManager implemen
     if (ok[0]) {
       // otherwise changes maybe not synced to the document yet, and injectors will crash
       if (!mySynchronizer.isDocumentAffectedByTransactions(document)) {
-        InjectedLanguageManager.getInstance(myProject).startRunInjectors(document, synchronously);
+        InjectedLanguageManager.getInstance(myProject).startRunInjectorsInRange(document, changedRange, synchronously);
       }
       // run after commit actions outside write action
       runAfterCommitActions(document);
@@ -427,8 +416,8 @@ public abstract class PsiDocumentManagerBase extends PsiDocumentManager implemen
   }
 
   void forceReload(VirtualFile virtualFile, @Nullable FileViewProvider viewProvider) {
-    if (viewProvider instanceof SingleRootFileViewProvider) {
-      ((SingleRootFileViewProvider)viewProvider).markInvalidated();
+    if (viewProvider != null) {
+      ((AbstractFileViewProvider)viewProvider).markInvalidated();
     }
     if (virtualFile != null) {
       ((FileManagerImpl)((PsiManagerEx)myPsiManager).getFileManager()).forceReload(virtualFile);
@@ -472,7 +461,7 @@ public abstract class PsiDocumentManagerBase extends PsiDocumentManager implemen
       assert !isInUncommittedSet(document) : "Document :" + document;
     };
 
-    if (SingleRootFileViewProvider.isFreeThreaded(psiFile.getViewProvider())) {
+    if (AbstractFileViewProvider.isFreeThreaded(psiFile.getViewProvider())) {
       runnable.run();
     }
     else {
@@ -820,7 +809,7 @@ public abstract class PsiDocumentManagerBase extends PsiDocumentManager implemen
       beforeDocumentChangeOnUnlockedDocument(viewProvider);
     }
 
-    ((SingleRootFileViewProvider)viewProvider).beforeDocumentChanged(psiCause);
+    ((AbstractFileViewProvider)viewProvider).beforeDocumentChanged(psiCause);
   }
 
   protected void beforeDocumentChangeOnUnlockedDocument(@NotNull final FileViewProvider viewProvider) {
@@ -900,12 +889,7 @@ public abstract class PsiDocumentManagerBase extends PsiDocumentManager implemen
     ApplicationManager.getApplication().runWriteAction(new ExternalChangeAction() {
       @Override
       public void run() {
-        FileViewProvider viewProvider = psiFile.getViewProvider();
-        if (viewProvider instanceof SingleRootFileViewProvider) {
-          ((SingleRootFileViewProvider)viewProvider).onContentReload();
-        } else {
-          LOG.error("Invalid view provider: " + viewProvider + " of " + viewProvider.getClass());
-        }
+        ((AbstractFileViewProvider)psiFile.getViewProvider()).onContentReload();
       }
     });
   }

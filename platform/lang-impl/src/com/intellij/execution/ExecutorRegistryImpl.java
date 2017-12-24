@@ -16,6 +16,7 @@
 package com.intellij.execution;
 
 import com.intellij.execution.actions.RunContextAction;
+import com.intellij.execution.compound.CompoundRunConfiguration;
 import com.intellij.execution.configurations.RunConfiguration;
 import com.intellij.execution.executors.DefaultRunExecutor;
 import com.intellij.execution.impl.ExecutionManagerImpl;
@@ -33,12 +34,12 @@ import com.intellij.openapi.components.ApplicationComponent;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.*;
 import com.intellij.openapi.util.Trinity;
-import com.intellij.openapi.util.registry.Registry;
 import com.intellij.util.IconUtil;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.messages.MessageBusConnection;
 import gnu.trove.THashMap;
 import gnu.trove.THashSet;
+import kotlin.Pair;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -198,13 +199,33 @@ public class ExecutorRegistryImpl extends ExecutorRegistry implements Disposable
       myExecutor = executor;
     }
 
+    private boolean canRun(@NotNull Project project, @NotNull List<Pair<RunnerAndConfigurationSettings, ExecutionTarget>> pairs) {
+      if (pairs.isEmpty()) {
+        return false;
+      }
+      for (Pair<RunnerAndConfigurationSettings, ExecutionTarget> pair : pairs) {
+        RunnerAndConfigurationSettings runnerAndConfigurationSettings = pair.getFirst();
+        RunConfiguration configuration = runnerAndConfigurationSettings.getConfiguration();
+        if (configuration instanceof CompoundRunConfiguration) {
+          if (!canRun(project, ((CompoundRunConfiguration)configuration).getConfigurationsWithEffectiveRunTargets())) {
+            return false;
+          }
+        }
+        final ProgramRunner runner = RunnerRegistry.getInstance().getRunner(myExecutor.getId(), configuration);
+        if (!ExecutionTargetManager.canRun(runnerAndConfigurationSettings, pair.getSecond())
+            && runner != null && !isStarting(project, myExecutor.getId(), runner.getRunnerId())) {
+          return false;
+        }
+      }
+      return true;
+    }
+
     @Override
     public void update(final AnActionEvent e) {
       final Presentation presentation = e.getPresentation();
       final Project project = e.getProject();
 
-      if (project == null || !project.isInitialized() || project.isDisposed() ||
-          (DumbService.getInstance(project).isDumb() && !Registry.is("dumb.aware.run.configurations"))) {
+      if (project == null || !project.isInitialized() || project.isDisposed()) {
         presentation.setEnabled(false);
         return;
       }
@@ -212,22 +233,26 @@ public class ExecutorRegistryImpl extends ExecutorRegistry implements Disposable
       final RunnerAndConfigurationSettings selectedConfiguration = getSelectedConfiguration(project);
       boolean enabled = false;
       String text;
-      final String textWithMnemonic = getTemplatePresentation().getTextWithMnemonic();
       if (selectedConfiguration != null) {
+        if (DumbService.isDumb(project) && !selectedConfiguration.getType().isDumbAware()) {
+          presentation.setEnabled(false);
+          return;
+        }
+
         presentation.setIcon(getInformativeIcon(project, selectedConfiguration));
-        final ProgramRunner runner = RunnerRegistry.getInstance().getRunner(myExecutor.getId(), selectedConfiguration.getConfiguration());
-
-        ExecutionTarget target = ExecutionTargetManager.getActiveTarget(project);
-        enabled = ExecutionTargetManager.canRun(selectedConfiguration, target)
-                  && runner != null && !isStarting(project, myExecutor.getId(), runner.getRunnerId());
-
+        RunConfiguration configuration = selectedConfiguration.getConfiguration();
+        if (configuration instanceof CompoundRunConfiguration) {
+          enabled = canRun(project, ((CompoundRunConfiguration)configuration).getConfigurationsWithEffectiveRunTargets());
+        } else {
+          enabled = canRun(project, Collections.singletonList(new Pair<>(selectedConfiguration, ExecutionTargetManager.getActiveTarget(project))));
+        }
         if (enabled) {
           presentation.setDescription(myExecutor.getDescription());
         }
         text = myExecutor.getStartActionText(selectedConfiguration.getName());
       }
       else {
-        text = textWithMnemonic;
+        text = getTemplatePresentation().getTextWithMnemonic();
       }
 
       presentation.setEnabled(enabled);
@@ -274,6 +299,23 @@ public class ExecutorRegistryImpl extends ExecutorRegistry implements Disposable
       return RunManager.getInstance(project).getSelectedConfiguration();
     }
 
+    private void run(@NotNull Project project, @Nullable RunnerAndConfigurationSettings configuration, @NotNull DataContext dataContext) {
+      if (configuration != null && configuration.getConfiguration() instanceof CompoundRunConfiguration) {
+        List<Pair<RunnerAndConfigurationSettings, ExecutionTarget>> pairs =
+          ((CompoundRunConfiguration)configuration.getConfiguration()).getConfigurationsWithEffectiveRunTargets();
+        for (Pair<RunnerAndConfigurationSettings, ExecutionTarget> pair : pairs) {
+          run(project, pair.getFirst(), dataContext);
+        }
+      } else {
+        ExecutionEnvironmentBuilder builder =
+          configuration == null ? null : ExecutionEnvironmentBuilder.createOrNull(myExecutor, configuration);
+        if (builder == null) {
+          return;
+        }
+        ExecutionManager.getInstance(project).restartRunProfile(builder.activeTarget().dataContext(dataContext).build());
+      }
+    }
+
     @Override
     public void actionPerformed(final AnActionEvent e) {
       final Project project = e.getProject();
@@ -281,12 +323,7 @@ public class ExecutorRegistryImpl extends ExecutorRegistry implements Disposable
         return;
       }
 
-      RunnerAndConfigurationSettings configuration = getSelectedConfiguration(project);
-      ExecutionEnvironmentBuilder builder = configuration == null ? null : ExecutionEnvironmentBuilder.createOrNull(myExecutor, configuration);
-      if (builder == null) {
-        return;
-      }
-      ExecutionManager.getInstance(project).restartRunProfile(builder.activeTarget().dataContext(e.getDataContext()).build());
+      run(project, getSelectedConfiguration(project), e.getDataContext());
     }
   }
 }

@@ -21,6 +21,7 @@ import com.intellij.util.containers.ContainerUtil;
 import org.jdom.Element;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.util.*;
@@ -32,7 +33,6 @@ class ChangeListManagerSerialization {
   @NonNls private static final String ATT_DEFAULT = "default";
   @NonNls private static final String ATT_READONLY = "readonly";
   @NonNls private static final String ATT_VALUE_TRUE = "true";
-  @NonNls private static final String ATT_CHANGE_TYPE = "type";
   @NonNls private static final String ATT_CHANGE_BEFORE_PATH = "beforePath";
   @NonNls private static final String ATT_CHANGE_AFTER_PATH = "afterPath";
   @NonNls private static final String ATT_PATH = "path";
@@ -90,25 +90,22 @@ class ChangeListManagerSerialization {
 
     boolean hasDefault = false;
     Map<String, LocalChangeListImpl> map = new HashMap<>();
+
     for (LocalChangeListImpl list : lists) {
-      if (list.isDefault()) {
-        if (hasDefault) {
-          list.setDefault(false);
-        }
-        hasDefault = true;
+      if (list.isDefault() && hasDefault) {
+        list = new LocalChangeListImpl.Builder(list).setDefault(false).build();
       }
+      hasDefault |= list.isDefault();
 
       LocalChangeListImpl otherList = map.get(list.getName());
-      if (otherList == null) {
-        map.put(list.getName(), list);
+      if (otherList != null) {
+        list = new LocalChangeListImpl.Builder(otherList)
+          .setChanges(ContainerUtil.union(list.getChanges(), otherList.getChanges()))
+          .setDefault(list.isDefault() || otherList.isDefault())
+          .build();
       }
-      else {
-        for (Change change : list.getChanges()) {
-          otherList.addChange(change);
-        }
 
-        if (list.isDefault()) otherList.setDefault(true);
-      }
+      map.put(list.getName(), list);
     }
     return map.values();
   }
@@ -127,7 +124,12 @@ class ChangeListManagerSerialization {
       listNode.setAttribute(ATT_COMMENT, comment);
     }
 
-    List<Change> changes = ContainerUtil.sorted(list.getChanges(), Comparator.comparing(Change::toString));
+    Object listData = list.getData();
+    if (listData instanceof ChangeListData) {
+      listNode.addContent(ChangeListData.writeExternal((ChangeListData)listData));
+    }
+    
+    List<Change> changes = ContainerUtil.sorted(list.getChanges(), new ChangeComparator());
     for (Change change : changes) {
       listNode.addContent(writeChange(change));
     }
@@ -135,27 +137,51 @@ class ChangeListManagerSerialization {
     return listNode;
   }
 
+  private static class ChangeComparator implements Comparator<Change> {
+    @Override
+    public int compare(Change o1, Change o2) {
+      ContentRevision bRev1 = o1.getBeforeRevision();
+      ContentRevision bRev2 = o2.getBeforeRevision();
+      int delta = compareRevisions(bRev1, bRev2);
+      if (delta != 0) return delta;
+
+      ContentRevision aRev1 = o1.getAfterRevision();
+      ContentRevision aRev2 = o2.getAfterRevision();
+      return compareRevisions(aRev1, aRev2);
+    }
+
+    private static int compareRevisions(@Nullable ContentRevision bRev1, @Nullable ContentRevision bRev2) {
+      if (bRev1 == null && bRev2 == null) return 0;
+      if (bRev1 == null) return -1;
+      if (bRev2 == null) return 1;
+      String path1 = bRev1.getFile().getPath();
+      String path2 = bRev2.getFile().getPath();
+      return path1.compareTo(path2);
+    }
+  }
+
   @NotNull
   private static LocalChangeListImpl readChangeList(@NotNull Element listNode, @NotNull Project project) {
     String id = listNode.getAttributeValue(ATT_ID);
-    String name = listNode.getAttributeValue(ATT_NAME);
-    String comment = listNode.getAttributeValue(ATT_COMMENT);
+    String name = StringUtil.notNullize(listNode.getAttributeValue(ATT_NAME), LocalChangeList.DEFAULT_NAME);
+    String comment = StringUtil.notNullize(listNode.getAttributeValue(ATT_COMMENT));
+    ChangeListData data = ChangeListData.readExternal(listNode);
+    boolean isDefault = ATT_VALUE_TRUE.equals(listNode.getAttributeValue(ATT_DEFAULT));
+    boolean isReadOnly = ATT_VALUE_TRUE.equals(listNode.getAttributeValue(ATT_READONLY));
 
-    LocalChangeListImpl list = LocalChangeListImpl.createEmptyChangeListImpl(project, name, id);
-    list.setCommentImpl(comment);
-
+    List<Change> changes = new ArrayList<>();
     for (Element changeNode : listNode.getChildren(NODE_CHANGE)) {
-      list.addChange(readChange(changeNode));
+      changes.add(readChange(changeNode));
     }
 
-    if (ATT_VALUE_TRUE.equals(listNode.getAttributeValue(ATT_DEFAULT))) {
-      list.setDefault(true);
-    }
-    if (ATT_VALUE_TRUE.equals(listNode.getAttributeValue(ATT_READONLY))) {
-      list.setReadOnlyImpl(true);
-    }
-
-    return list;
+    return new LocalChangeListImpl.Builder(project, name)
+      .setId(id)
+      .setComment(comment)
+      .setChanges(changes)
+      .setData(data)
+      .setDefault(isDefault)
+      .setReadOnly(isReadOnly)
+      .build();
   }
 
   @NotNull
@@ -188,7 +214,6 @@ class ChangeListManagerSerialization {
   @NotNull
   private static Element writeChange(@NotNull Change change) {
     Element changeNode = new Element(NODE_CHANGE);
-    changeNode.setAttribute(ATT_CHANGE_TYPE, change.getType().name());
 
     ContentRevision bRev = change.getBeforeRevision();
     ContentRevision aRev = change.getAfterRevision();

@@ -15,7 +15,6 @@
  */
 package com.intellij.openapi.fileChooser.tree;
 
-import com.intellij.openapi.Disposable;
 import com.intellij.openapi.fileChooser.FileChooserDescriptor;
 import com.intellij.openapi.fileChooser.FileElement;
 import com.intellij.openapi.util.Pair;
@@ -26,6 +25,7 @@ import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.newvfs.BulkFileListener;
 import com.intellij.openapi.vfs.newvfs.events.*;
+import com.intellij.openapi.vfs.newvfs.impl.VirtualFileSystemEntry;
 import com.intellij.ui.tree.Identifiable;
 import com.intellij.ui.tree.MapBasedTree;
 import com.intellij.ui.tree.MapBasedTree.Entry;
@@ -42,6 +42,7 @@ import org.jetbrains.concurrency.Promises;
 import javax.swing.Icon;
 import javax.swing.tree.TreePath;
 import java.io.File;
+import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -53,13 +54,14 @@ import static com.intellij.openapi.util.Disposer.register;
 import static com.intellij.openapi.util.io.FileUtil.toSystemIndependentName;
 import static com.intellij.openapi.util.text.StringUtil.naturalCompare;
 import static com.intellij.openapi.vfs.VirtualFileManager.VFS_CHANGES;
+import static com.intellij.util.ReflectionUtil.getDeclaredMethod;
 import static java.util.Collections.emptyList;
 import static java.util.stream.Collectors.toList;
 
 /**
  * @author Sergey.Malenkov
  */
-public final class FileTreeModel extends AbstractTreeModel implements Disposable, Identifiable, Searchable, InvokerSupplier {
+public final class FileTreeModel extends AbstractTreeModel implements Identifiable, Searchable, InvokerSupplier {
   private final Invoker invoker = new Invoker.BackgroundThread(this);
   private final State state;
   private volatile List<Root> roots;
@@ -88,10 +90,6 @@ public final class FileTreeModel extends AbstractTreeModel implements Disposable
       }
       treeStructureChanged(state.path, null, null);
     });
-  }
-
-  @Override
-  public void dispose() {
   }
 
   @Override
@@ -492,7 +490,21 @@ public final class FileTreeModel extends AbstractTreeModel implements Disposable
       super(state, file);
       if (state.refresher != null && state.refresher.isRecursive()) state.refresher.register(file);
       tree = new MapBasedTree<>(false, node -> node.getFile(), state.path);
+      tree.onInsert(node -> markDirtyInternal(node.getFile()));
       tree.updateRoot(Pair.create(this, state.isLeaf(file)));
+    }
+
+    private static void markDirtyInternal(VirtualFile file) {
+      if (file instanceof VirtualFileSystemEntry) {
+        Method method = getDeclaredMethod(VirtualFileSystemEntry.class, "markDirtyInternal");
+        if (method != null) {
+          try {
+            method.invoke(file);
+          }
+          catch (Exception ignore) {
+          }
+        }
+      }
     }
 
     private UpdateResult<Node> updateChildren(State state, Entry<Node> parent) {

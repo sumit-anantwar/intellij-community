@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.wm.impl;
 
 import com.intellij.diagnostic.IdeMessagePanel;
@@ -20,6 +6,8 @@ import com.intellij.icons.AllIcons;
 import com.intellij.ide.AppLifecycleListener;
 import com.intellij.ide.DataManager;
 import com.intellij.ide.impl.ProjectUtil;
+import com.intellij.ide.ui.LafManager;
+import com.intellij.ide.ui.LafManagerListener;
 import com.intellij.ide.ui.UISettings;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.notification.impl.IdeNotificationArea;
@@ -28,11 +16,7 @@ import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.DataProvider;
 import com.intellij.openapi.actionSystem.ex.ActionManagerEx;
 import com.intellij.openapi.actionSystem.impl.MouseGestureManager;
-import com.intellij.openapi.application.Application;
-import com.intellij.openapi.application.ApplicationInfo;
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.application.ex.ApplicationInfoEx;
+import com.intellij.openapi.application.*;
 import com.intellij.openapi.application.ex.ApplicationManagerEx;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -54,6 +38,7 @@ import com.intellij.openapi.wm.impl.status.*;
 import com.intellij.openapi.wm.impl.welcomeScreen.WelcomeFrame;
 import com.intellij.ui.*;
 import com.intellij.ui.mac.MacMainFrameDecorator;
+import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.accessibility.AccessibleContextAccessor;
 import org.jetbrains.annotations.NotNull;
@@ -78,7 +63,7 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
 
   public static final Key<Boolean> SHOULD_OPEN_IN_FULL_SCREEN = Key.create("should.open.in.full.screen");
 
-  private static boolean myUpdatingTitle;
+  private static boolean ourUpdatingTitle;
 
   private String myTitle;
   private String myFileTitle;
@@ -90,21 +75,20 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
   private BalloonLayout myBalloonLayout;
   private IdeFrameDecorator myFrameDecorator;
   private boolean myRestoreFullScreen;
+  private LafManagerListener myLafListener;
 
-  public IdeFrameImpl(ApplicationInfoEx applicationInfoEx,
-                      ActionManagerEx actionManager,
-                      DataManager dataManager,
-                      Application application) {
-    super(applicationInfoEx.getFullApplicationName());
+  public IdeFrameImpl(ActionManagerEx actionManager, DataManager dataManager, Application application) {
+    super(ApplicationNamesInfo.getInstance().getFullProductName());
+
     myRootPane = createRootPane(actionManager, dataManager, application);
     setRootPane(myRootPane);
     setBackground(UIUtil.getPanelBackground());
+    LafManager.getInstance().addLafManagerListener(myLafListener = src -> setBackground(UIUtil.getPanelBackground()));
     AppUIUtil.updateWindowIcon(this);
-    final Dimension size = ScreenUtil.getMainScreenBounds().getSize();
 
+    Dimension size = ScreenUtil.getMainScreenBounds().getSize();
     size.width = Math.min(1400, size.width - 20);
     size.height= Math.min(1000, size.height - 40);
-
     setSize(size);
     setLocationRelativeTo(null);
 
@@ -114,7 +98,7 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
     setupCloseAction();
     MnemonicHelper.init(this);
 
-    myBalloonLayout = new BalloonLayoutImpl(myRootPane, new Insets(8, 8, 8, 8));
+    myBalloonLayout = new BalloonLayoutImpl(myRootPane, JBUI.insets(8));
 
     // to show window thumbnail under Macs
     // http://lists.apple.com/archives/java-dev/2009/Dec/msg00240.html
@@ -135,19 +119,14 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
     PowerSupplyKit.checkPowerSupply();
   }
 
-  protected IdeRootPane createRootPane(ActionManagerEx actionManager,
-                                       DataManager dataManager,
-                                       Application application) {
+  protected IdeRootPane createRootPane(ActionManagerEx actionManager, DataManager dataManager, Application application) {
     return new IdeRootPane(actionManager, dataManager, application, this);
   }
 
   @NotNull
   @Override
   public Insets getInsets() {
-    if (SystemInfo.isMac && isInFullScreen()) {
-      return new Insets(0, 0, 0, 0);
-    }
-    return super.getInsets();
+    return SystemInfo.isMac && isInFullScreen() ? JBUI.emptyInsets() : super.getInsets();
   }
 
   @Override
@@ -164,6 +143,7 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
   }
 
   @Override
+  @SuppressWarnings({"SSBasedInspection", "deprecation"})
   public void show() {
     super.show();
     SwingUtilities.invokeLater(() -> setFocusableWindowState(true));
@@ -210,9 +190,10 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
 
   @Override
   public void setTitle(final String title) {
-    if (myUpdatingTitle) {
+    if (ourUpdatingTitle) {
       super.setTitle(title);
-    } else {
+    }
+    else {
       myTitle = title;
     }
 
@@ -220,16 +201,12 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
   }
 
   @Override
-  public void setFrameTitle(final String text) {
+  public void setFrameTitle(String text) {
     super.setTitle(text);
   }
 
-  public void setFileTitle(final String fileTitle) {
-    setFileTitle(fileTitle, null);
-  }
-
   @Override
-  public void setFileTitle(@Nullable final String fileTitle, @Nullable File file) {
+  public void setFileTitle(@Nullable String fileTitle, @Nullable File file) {
     myFileTitle = fileTitle;
     myCurrentFile = file;
     updateTitle();
@@ -244,22 +221,25 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
     updateTitle(this, myTitle, myFileTitle, myCurrentFile);
   }
 
-  public static void updateTitle(JFrame frame, final String title, final String fileTitle, final File currentFile) {
-    if (myUpdatingTitle) return;
+  public static void updateTitle(@NotNull JFrame frame, @Nullable String title, @Nullable String fileTitle, @Nullable File currentFile) {
+    if (ourUpdatingTitle) return;
 
     try {
-      myUpdatingTitle = true;
+      ourUpdatingTitle = true;
 
       frame.getRootPane().putClientProperty("Window.documentFile", currentFile);
 
       Builder builder = new Builder().append(title).append(fileTitle);
-      if (!SystemInfo.isMac || builder.isEmpty()) {
-        builder = builder.append(((ApplicationInfoEx)ApplicationInfo.getInstance()).getFullApplicationName());
+      if (Boolean.getBoolean("ide.ui.version.in.title")) {
+        builder = builder.append(ApplicationNamesInfo.getInstance().getFullProductName() + ' ' + ApplicationInfo.getInstance().getFullVersion());
+      }
+      else if (!SystemInfo.isMac || builder.isEmpty()) {
+        builder = builder.append(ApplicationNamesInfo.getInstance().getFullProductName());
       }
       frame.setTitle(builder.toString());
     }
     finally {
-      myUpdatingTitle = false;
+      ourUpdatingTitle = false;
     }
   }
 
@@ -329,7 +309,10 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
 
       if (myRootPane != null) {
         myRootPane.installNorthComponents(project);
-        project.getMessageBus().connect().subscribe(StatusBar.Info.TOPIC, myRootPane.getStatusBar());
+        StatusBar statusBar = myRootPane.getStatusBar();
+        if (statusBar != null) {
+          project.getMessageBus().connect().subscribe(StatusBar.Info.TOPIC, statusBar);
+        }
       }
 
       installDefaultProjectStatusBarWidgets(myProject);
@@ -393,6 +376,7 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
       statusBar.removeWidget(readOnlyAttributePanel.ID());
       statusBar.removeWidget(insertOverwritePanel.ID());
 
+      //noinspection deprecation
       ((StatusBarEx)statusBar).removeCustomIndicationComponents();
     });
   }
@@ -430,6 +414,7 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
       Disposer.dispose(myFrameDecorator);
       myFrameDecorator = null;
     }
+    if (myLafListener != null) LafManager.getInstance().removeLafManagerListener(myLafListener);
 
     FocusTrackback.release(this);
 
@@ -485,7 +470,6 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
 
   @Override
   public Rectangle suggestChildFrameBounds() {
-    //todo [kirillk] a dummy implementation
     final Rectangle b = getBounds();
     b.x += 100;
     b.width -= 200;
@@ -553,8 +537,7 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
         builder.append(" - ");
       }
 
-      final String applicationName = ((ApplicationInfoEx)ApplicationInfo.getInstance()).getFullApplicationName();
-      builder.append(applicationName);
+      builder.append(ApplicationNamesInfo.getInstance().getFullProductName());
 
       return builder.toString();
     }

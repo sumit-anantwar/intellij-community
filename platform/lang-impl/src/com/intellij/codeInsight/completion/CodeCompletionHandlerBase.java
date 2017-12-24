@@ -219,10 +219,8 @@ public class CodeCompletionHandlerBase {
         dummyIdentifierChanger = current.get();
       }
     };
-    List<CompletionContributor> contributors = CompletionContributor.forLanguage(context.getPositionLanguage());
     Project project = psiFile.getProject();
-    List<CompletionContributor> filteredContributors = DumbService.getInstance(project).filterByDumbAwareness(contributors);
-    for (final CompletionContributor contributor : filteredContributors) {
+    for (final CompletionContributor contributor : CompletionContributor.forLanguageHonorDumbness(context.getPositionLanguage(), project)) {
       current.set(contributor);
       contributor.beforeCompletion(context);
       CompletionAssertions.checkEditorValid(editor);
@@ -243,7 +241,7 @@ public class CodeCompletionHandlerBase {
     int offset = editor.getCaretModel().getOffset();
     int psiOffset = Math.max(0, offset - 1);
 
-    PsiElement elementAt = InjectedLanguageUtil.findInjectedElementNoCommit(psiFile, psiOffset);
+    PsiElement elementAt = InjectedLanguageManager.getInstance(psiFile.getProject()).findInjectedElementAt(psiFile, psiOffset);
     if (elementAt == null) {
       elementAt = psiFile.findElementAt(psiOffset);
     }
@@ -319,6 +317,7 @@ public class CodeCompletionHandlerBase {
       return;
     }
 
+    indicator.makeSureLookupIsShown(ourAutoInsertItemTimeout);
     if (indicator.blockingWaitForFinish(ourAutoInsertItemTimeout)) {
       try {
         indicator.getLookup().refreshUi(true, false);
@@ -511,7 +510,7 @@ public class CodeCompletionHandlerBase {
     }
   }
 
-  private boolean isAnythingInvalidatedAfterCommit(CompletionInitializationContext initContext, PsiFile hostCopy) {
+  private static boolean isAnythingInvalidatedAfterCommit(CompletionInitializationContext initContext, PsiFile hostCopy) {
     return !initContext.getFile().isValid() || !hostCopy.isValid() ||
            !CompletionAssertions.isEditorValid(initContext.getEditor());
   }
@@ -520,21 +519,22 @@ public class CodeCompletionHandlerBase {
     CompletionAssertions.assertHostInfo(hostCopyOffsets.getFile(), hostCopyOffsets.getOffsets());
 
     int hostStartOffset = hostCopyOffsets.getOffsets().getOffset(CompletionInitializationContext.START_OFFSET);
+    OffsetsInFile result = hostCopyOffsets;
     OffsetsInFile translatedOffsets = hostCopyOffsets.toInjectedIfAny(hostStartOffset);
-
-    InjectedLanguageManager injectedLanguageManager = InjectedLanguageManager.getInstance(originalFile.getProject());
-    PsiFile injected = translatedOffsets == hostCopyOffsets ? null : translatedOffsets.getFile();
-    if (injected != null) {
+    if (translatedOffsets != hostCopyOffsets) {
+      PsiFile injected = translatedOffsets.getFile();
       if (injected instanceof PsiFileImpl) {
         ((PsiFileImpl)injected).setOriginalFile(originalFile);
       }
       DocumentWindow documentWindow = InjectedLanguageUtil.getDocumentWindow(injected);
-      CompletionAssertions.assertInjectedOffsets(hostStartOffset, injectedLanguageManager, injected, documentWindow);
+      CompletionAssertions.assertInjectedOffsets(hostStartOffset, injected, documentWindow);
+
+      if (injected.getTextRange().contains(translatedOffsets.getOffsets().getOffset(CompletionInitializationContext.START_OFFSET))) {
+        result = translatedOffsets;
+      }
     }
 
-    CompletionContext context = new CompletionContext(translatedOffsets.getFile(), translatedOffsets.getOffsets());
-    CompletionAssertions.assertFinalOffsets(originalFile, context, injected);
-    return context;
+    return new CompletionContext(result.getFile(), result.getOffsets());
   }
 
   protected void lookupItemSelected(final CompletionProgressIndicator indicator, @NotNull final LookupElement item, final char completionChar,
@@ -634,8 +634,7 @@ public class CodeCompletionHandlerBase {
                                                                           final int caretOffset,
                                                                           final int idEndOffset, final OffsetMap offsetMap) {
     editor.getCaretModel().moveToOffset(caretOffset);
-    final int initialStartOffset = caretOffset - item.getLookupString().length();
-    assert initialStartOffset >= 0 : "negative startOffset: " + caretOffset + "; " + item.getLookupString();
+    int initialStartOffset = Math.max(0, caretOffset - item.getLookupString().length());
 
     offsetMap.addOffset(CompletionInitializationContext.START_OFFSET, initialStartOffset);
     offsetMap.addOffset(CompletionInitializationContext.SELECTION_END_OFFSET, caretOffset);
@@ -681,7 +680,7 @@ public class CodeCompletionHandlerBase {
     if (context.getCompletionChar() == Lookup.COMPLETE_STATEMENT_SELECT_CHAR) {
       Language language = PsiUtilBase.getLanguageInEditor(editor, indicator.getProject());
       if (language != null) {
-        for (SmartEnterProcessor processor : SmartEnterProcessors.INSTANCE.forKey(language)) {
+        for (SmartEnterProcessor processor : SmartEnterProcessors.INSTANCE.allForLanguage(language)) {
           if (processor.processAfterCompletion(editor, indicator.getParameters().getOriginalFile())) break;
         }
       }

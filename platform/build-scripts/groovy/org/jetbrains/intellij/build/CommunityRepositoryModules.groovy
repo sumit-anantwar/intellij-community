@@ -17,6 +17,7 @@ package org.jetbrains.intellij.build
 
 import groovy.transform.CompileStatic
 import org.jetbrains.intellij.build.impl.PluginLayout
+import org.jetbrains.intellij.build.python.PythonCommunityPluginModules
 
 import static org.jetbrains.intellij.build.impl.PluginLayout.plugin
 
@@ -52,7 +53,6 @@ class CommunityRepositoryModules {
     "xml-openapi",
     "xml-psi-api",
     "xml-structure-view-api",
-    "uast-common",
   ]
 
   static List<String> PLATFORM_IMPLEMENTATION_MODULES = [
@@ -65,8 +65,6 @@ class CommunityRepositoryModules {
     "editor-ui-ex",
     "images",
     "indexing-impl",
-    "jps-model-impl",
-    "jps-model-serialization",
     "json",
     "lang-impl",
     "lvcs-impl",
@@ -112,7 +110,7 @@ class CommunityRepositoryModules {
       withModule("properties-psi-impl", "properties.jar")
     },
     plugin("git4idea") {
-      withModule("git4idea-rt", "git4idea-rt.jar", false)
+      withModule("git4idea-rt", "git4idea-rt.jar", null)
       withOptionalModule("remote-servers-git")
       withOptionalModule("remote-servers-git-java", "remote-servers-git.jar")
     },
@@ -154,10 +152,6 @@ class CommunityRepositoryModules {
       excludeFromModule("xslt-debugger-engine-impl", "saxon9he.jar")
       excludeFromModule("xslt-debugger-engine-impl", "serializer.jar")
       excludeFromModule("xslt-debugger-engine-impl", "xalan.jar")
-    },
-    plugin("Edu-Python") {
-      withResource("resources/courses", "lib/courses")
-      excludeFromModule("Edu-Python", "courses/**")
     },
     plugin("maven") {
       withModule("maven-jps-plugin")
@@ -201,9 +195,6 @@ class CommunityRepositoryModules {
       mainJarName = "idea-junit.jar"
       withModule("junit_rt", "junit-rt.jar")
       withModule("junit5_rt", "junit5-rt.jar")
-      withProjectLibrary("junit5_rt")
-      withProjectLibrary("opentest4j")
-      withModuleLibrary("junit-jupiter-api-5.0.0-RC2.jar", "junit5_rt_tests", "")
     },
     plugin("ByteCodeViewer") {
       mainJarName = "byteCodeViewer.jar"
@@ -217,13 +208,16 @@ class CommunityRepositoryModules {
       withModule("devkit-jps-plugin")
     },
     plugin("eclipse") {
-      withModule("eclipse-jps-plugin", "eclipse-jps-plugin.jar", false)
+      withModule("eclipse-jps-plugin", "eclipse-jps-plugin.jar", null)
       withModule("common-eclipse-util")
     },
     plugin("coverage") {
       withModule("coverage-common", mainJarName)
       withModule("coverage_rt")
       withProjectLibrary("JaCoCo") //todo[nik] convert to module library
+    },
+    plugin("error-prone") {
+      withModule("error-prone-jps-plugin", "jps/error-prone-jps-plugin.jar")
     },
     plugin("java-decompiler-plugin") {
       directoryName = "java-decompiler"
@@ -236,7 +230,8 @@ class CommunityRepositoryModules {
       withResource("resources/.zshrc", "")
       withResource("resources/jediterm-bash.in", "")
       withResource("resources/fish/config.fish", "fish")
-    }
+    },
+    PythonCommunityPluginModules.pythonCommunityPluginLayout()
   ]
 
   static PluginLayout androidPlugin(Map<String, String> additionalModulesToJars) {
@@ -251,8 +246,8 @@ class CommunityRepositoryModules {
       withModule("manifest-merger")
       withModule("repository")
       withModule("common", "android-common.jar")
-      withModule("android-common", "android-common.jar", false)
-      withModule("android-rt", "android-rt.jar", false)
+      withModule("android-common", "android-common.jar", null)
+      withModule("android-rt", "android-rt.jar", null)
       withModule("android-annotations", "androidAnnotations.jar")
       withModule("sdklib", "sdklib.jar")
       withModule("sdk-common", "sdk-common.jar")
@@ -276,8 +271,7 @@ class CommunityRepositoryModules {
       withModule("instant-run-common", "sdk-tools.jar")
       withModule("instant-run-client", "sdk-tools.jar")
       withModule("instant-run-runtime", "sdk-tools.jar")
-      withModule("android-gradle-jps", "jps/android-gradle-jps.jar", false)
-      withModule("android-jps-plugin", "jps/android-jps-plugin.jar", false)
+      withModule("android-jps-plugin", "jps/android-jps-plugin.jar", null)
       withProjectLibrary("freemarker-2.3.20") //todo[nik] move to module libraries
       withProjectLibrary("jgraphx-3.4.0.1") //todo[nik] move to module libraries
       withProjectLibrary("kxml2") //todo[nik] move to module libraries

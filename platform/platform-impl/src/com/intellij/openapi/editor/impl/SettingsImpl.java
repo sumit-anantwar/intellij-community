@@ -16,6 +16,7 @@
 
 package com.intellij.openapi.editor.impl;
 
+import com.intellij.application.options.CodeStyle;
 import com.intellij.codeStyle.CodeStyleFacade;
 import com.intellij.lang.Language;
 import com.intellij.openapi.diagnostic.Logger;
@@ -36,6 +37,10 @@ import com.intellij.psi.codeStyle.CommonCodeStyleSettings;
 import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 public class SettingsImpl implements EditorSettings {
   private static final Logger LOG = Logger.getInstance(SettingsImpl.class);
@@ -90,6 +95,8 @@ public class SettingsImpl implements EditorSettings {
   private Boolean myRenamePreselect                       = null;
   private Boolean myWrapWhenTypingReachesRightMargin      = null;
   private Boolean myShowIntentionBulb                     = null;
+
+  private List<Integer> mySoftMargins = null;
   
   public SettingsImpl() {
     this(null, null, null);
@@ -255,6 +262,20 @@ public class SettingsImpl implements EditorSettings {
     fireEditorRefresh();
   }
 
+  @NotNull
+  @Override
+  public List<Integer> getSoftMargins() {
+    if (mySoftMargins != null) return mySoftMargins;
+    return CodeStyleSettingsManager.getSettings(myEditor == null ? null : myEditor.getProject()).getSoftMargins(myLanguage);
+  }
+
+  @Override
+  public void setSoftMargins(@Nullable List<Integer> softMargins) {
+    if (Objects.equals(mySoftMargins, softMargins)) return;
+    mySoftMargins = softMargins != null ? new ArrayList<>(softMargins) : null;
+    fireEditorRefresh();
+  }
+
   @Override
   public int getAdditionalLinesCount() {
     return myAdditionalLinesCount;
@@ -318,10 +339,11 @@ public class SettingsImpl implements EditorSettings {
 
   @Override
   public boolean isUseTabCharacter(Project project) {
+    if (myUseTabCharacter != null) return myUseTabCharacter.booleanValue();
     PsiFile file = getPsiFile(project);
-    return myUseTabCharacter != null
-           ? myUseTabCharacter.booleanValue()
-           : CodeStyleSettingsManager.getSettings(project).getIndentOptionsByFile(file).USE_TAB_CHARACTER;
+    return file != null
+           ? CodeStyle.getIndentOptions(file).USE_TAB_CHARACTER
+           : CodeStyle.getSettings(project).getIndentOptions(null).USE_TAB_CHARACTER;
   }
 
   @Override
@@ -377,15 +399,17 @@ public class SettingsImpl implements EditorSettings {
     int tabSize;
     try {
       if (project == null || project.isDisposed()) {
-        tabSize = CodeStyleSettingsManager.getSettings(null).getTabSize(null);
+        tabSize = CodeStyle.getDefaultSettings().getTabSize(null);
       }
       else  {
         PsiFile file = getPsiFile(project);
         if (myEditor != null && myEditor.isViewer()) {
           FileType fileType = file != null ? file.getFileType() : null;
-          tabSize = CodeStyleSettingsManager.getSettings(project).getIndentOptions(fileType).TAB_SIZE;
+          tabSize = CodeStyle.getSettings(project).getIndentOptions(fileType).TAB_SIZE;
         } else {
-          tabSize = CodeStyleSettingsManager.getSettings(project).getIndentOptionsByFile(file).TAB_SIZE;
+          tabSize = file != null ?
+                    CodeStyle.getIndentOptions(file).TAB_SIZE :
+                    CodeStyle.getSettings(project).getTabSize(null);
         }
       }
     }

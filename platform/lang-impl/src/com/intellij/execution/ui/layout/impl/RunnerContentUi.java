@@ -59,6 +59,7 @@ import com.intellij.util.ui.GraphicsUtil;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import one.util.streamex.StreamEx;
+import com.intellij.util.ui.accessibility.ScreenReader;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -240,7 +241,8 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
     myTabs.getPresentation().setPaintBorder(0, 0, 0, 0).setPaintFocus(false)
       .setRequestFocusOnLastFocusedComponent(true);
     myTabs.getComponent().setBackground(myToolbar.getBackground());
-    myTabs.getComponent().setBorder(JBUI.Borders.emptyLeft(1));
+    //noinspection UseDPIAwareBorders
+    myTabs.getComponent().setBorder(new EmptyBorder(0, 1, 0, 0));
 
     myToolbar.setBorder(JBUI.Borders.emptyTop(1)); // Compensate negative insets below
 
@@ -392,13 +394,8 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
     final GridImpl grid = getGridFor(content, false);
     if (grid == null) return;
 
-    final GridCellImpl cell = grid.findCell(content);
-    if (cell == null) return;
-
-
     final TabInfo tab = myTabs.findInfo(grid);
     if (tab == null) return;
-
 
     if (getSelectedGrid() != grid) {
       tab.setAlertIcon(content.getAlertIcon());
@@ -855,8 +852,7 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
       Wrapper eachPlaceholder = entry.getValue();
       List<Content> contentList = entry.getKey().getContents();
 
-      Set<Content> contents = new HashSet<>();
-      contents.addAll(contentList);
+      Set<Content> contents = new HashSet<>(contentList);
 
       DefaultActionGroup groupToBuild;
       JComponent contextComponent = null;
@@ -977,8 +973,7 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
     try {
       setStateIsBeingRestored(true, this);
 
-      List<TabInfo> tabs = new ArrayList<>();
-      tabs.addAll(myTabs.getTabs());
+      List<TabInfo> tabs = new ArrayList<>(myTabs.getTabs());
 
       final ActionCallback result = new ActionCallback(tabs.size());
 
@@ -1384,7 +1379,7 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
     public MyComponent(LayoutManager layout) {
       super(layout);
       setOpaque(true);
-      setFocusCycleRoot(true);
+      setFocusCycleRoot(!ScreenReader.isActive());
       setBorder(new ToolWindow.Border(false, false, false, false));
     }
 

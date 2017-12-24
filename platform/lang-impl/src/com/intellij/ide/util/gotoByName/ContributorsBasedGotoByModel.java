@@ -254,7 +254,7 @@ public abstract class ContributorsBasedGotoByModel implements ChooseByNameModelE
   @Override
   public String getElementName(Object element) {
     if (!(element instanceof NavigationItem)) {
-      throw new AssertionError(element + " of " + element.getClass());
+      throw new AssertionError((element == null ? "null" : element + " of " + element.getClass()) + " in " + this + " of " + getClass());
     }
     return ((NavigationItem)element).getName();
   }
@@ -286,5 +286,10 @@ public abstract class ContributorsBasedGotoByModel implements ChooseByNameModelE
 
   public @NotNull String removeModelSpecificMarkup(@NotNull String pattern) {
     return pattern;
+  }
+
+  @NotNull
+  public Project getProject() {
+    return myProject;
   }
 }

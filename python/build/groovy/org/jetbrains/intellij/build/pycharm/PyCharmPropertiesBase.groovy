@@ -15,10 +15,7 @@
  */
 package org.jetbrains.intellij.build.pycharm
 
-import org.jetbrains.intellij.build.ApplicationInfoProperties
-import org.jetbrains.intellij.build.BuildContext
-import org.jetbrains.intellij.build.BuildTasks
-import org.jetbrains.intellij.build.ProductProperties
+import org.jetbrains.intellij.build.*
 
 /**
  * @author nik
@@ -45,10 +42,56 @@ abstract class PyCharmPropertiesBase extends ProductProperties {
         include(name: "*.pdf")
       }
     }
+
+    new PyPrebuiltIndicesGenerator().generateResources(context)
+
+    def underTeamCity = System.getProperty("teamcity.buildType.id") != null
+
+    context.ant.copy(todir: "$targetDirectory/index", failonerror: underTeamCity) {
+      fileset(dir: "$context.paths.temp/index", erroronmissingdir: underTeamCity) {
+        include(name: "**")
+      }
+    }
   }
 
   @Override
   String getEnvironmentVariableBaseName(ApplicationInfoProperties applicationInfo) {
     "PYCHARM"
+  }
+}
+
+class PyPrebuiltIndicesGenerator implements ResourcesGenerator {
+  @Override
+  File generateResources(BuildContext context) {
+    CompilationTasks.create(context).compileModules(["python-community-tools"])
+    List<String> buildClasspath = context.getModuleRuntimeClasspath(context.findModule("python-community-tools"), false)
+
+    def zipPath = "$context.paths.temp/zips"
+
+    def underTeamCity = System.getProperty("teamcity.buildType.id") != null
+
+    context.ant.copy(todir: "$zipPath", failonerror: underTeamCity) {
+      fileset(dir: "$context.paths.projectHome/python-distributions", erroronmissingdir: underTeamCity) {
+        include(name: "*.zip")
+      }
+      fileset(dir: "$context.paths.projectHome/skeletons", erroronmissingdir: underTeamCity) {
+        include(name: "*.zip")
+      }
+    }
+
+    def outputPath = "$context.paths.temp/index"
+
+    context.ant.java(classname: "com.jetbrains.python.tools.PyPrebuiltIndicesGeneratorKt", fork: true) {
+      jvmarg(line: "-ea -Xmx1000m")
+      arg(value: zipPath)
+      arg(value: outputPath)
+      classpath {
+        buildClasspath.each {
+          pathelement(location: it)
+        }
+      }
+    }
+
+    return new File(outputPath)
   }
 }

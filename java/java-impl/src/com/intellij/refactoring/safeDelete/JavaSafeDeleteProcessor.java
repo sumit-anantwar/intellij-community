@@ -35,10 +35,7 @@ import com.intellij.psi.search.LocalSearchScope;
 import com.intellij.psi.search.searches.FunctionalExpressionSearch;
 import com.intellij.psi.search.searches.OverridingMethodsSearch;
 import com.intellij.psi.search.searches.ReferencesSearch;
-import com.intellij.psi.util.MethodSignatureUtil;
-import com.intellij.psi.util.PropertyUtil;
-import com.intellij.psi.util.PsiTreeUtil;
-import com.intellij.psi.util.PsiUtil;
+import com.intellij.psi.util.*;
 import com.intellij.refactoring.JavaRefactoringSettings;
 import com.intellij.refactoring.RefactoringBundle;
 import com.intellij.refactoring.changeSignature.inCallers.AbstractJavaMemberCallerChooser;
@@ -91,7 +88,13 @@ public class JavaSafeDeleteProcessor extends SafeDeleteProcessorDelegateBase {
     else if (element instanceof PsiLocalVariable) {
       for (PsiReference reference : ReferencesSearch.search(element)) {
         PsiReferenceExpression referencedElement = (PsiReferenceExpression)reference.getElement();
-        final PsiStatement statement = PsiTreeUtil.getParentOfType(referencedElement, PsiStatement.class);
+        PsiElement statementOrExprInList = PsiTreeUtil.getParentOfType(referencedElement, PsiStatement.class);
+        if (statementOrExprInList instanceof PsiExpressionListStatement) {
+          PsiExpressionList expressionList = ((PsiExpressionListStatement)statementOrExprInList).getExpressionList();
+          if (expressionList != null) {
+            statementOrExprInList = PsiTreeUtil.findPrevParent(expressionList, referencedElement);
+          }
+        }
 
         boolean isSafeToDelete = PsiUtil.isAccessedForWriting(referencedElement);
         boolean hasSideEffects = false;
@@ -101,7 +104,7 @@ public class JavaSafeDeleteProcessor extends SafeDeleteProcessorDelegateBase {
               .checkSideEffects(((PsiAssignmentExpression)referencedElement.getParent()).getRExpression(), ((PsiLocalVariable)element),
                                 new ArrayList<>());
         }
-        usages.add(new SafeDeleteReferenceJavaDeleteUsageInfo(statement, element, isSafeToDelete && !hasSideEffects));
+        usages.add(new SafeDeleteReferenceJavaDeleteUsageInfo(statementOrExprInList, element, isSafeToDelete && !hasSideEffects));
       }
     }
     return new NonCodeUsageSearchInfo(insideDeletedCondition, element);
@@ -233,7 +236,7 @@ public class JavaSafeDeleteProcessor extends SafeDeleteProcessorDelegateBase {
           getters = validGetters.isEmpty() ? null : validGetters.toArray(new PsiMethod[validGetters.size()]);
         }
 
-        PsiMethod setter = PropertyUtil.findPropertySetter(aClass, propertyName, isStatic, false);
+        PsiMethod setter = PropertyUtilBase.findPropertySetter(aClass, propertyName, isStatic, false);
         if (allElementsToDelete.contains(setter) || setter != null && !setter.isPhysical()) setter = null;
         if (askUser && (getters != null || setter != null)) {
           final String message =
@@ -928,7 +931,7 @@ public class JavaSafeDeleteProcessor extends SafeDeleteProcessorDelegateBase {
       return true;
     });
 
-    PsiMethod setterPrototype = PropertyUtil.generateSetterPrototype(psiField, psiField.getContainingClass());
+    PsiMethod setterPrototype = PropertyUtilBase.generateSetterPrototype(psiField, psiField.getContainingClass());
     PsiParameter setterParameter = setterPrototype.getParameterList().getParameters()[0];
     for (PsiParameter parameter : parameters) {
       PsiElement scope = parameter.getDeclarationScope();

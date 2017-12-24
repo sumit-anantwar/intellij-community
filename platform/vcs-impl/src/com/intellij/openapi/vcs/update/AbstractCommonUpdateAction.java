@@ -26,6 +26,7 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.progress.*;
+import com.intellij.openapi.progress.util.BackgroundTaskUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ex.ProjectManagerEx;
 import com.intellij.openapi.util.Ref;
@@ -342,7 +343,9 @@ public abstract class AbstractCommonUpdateAction extends AbstractVcsAction {
       myBefore = LocalHistory.getInstance().putSystemLabel(myProject, "Before update");
       myLocalHistoryAction = LocalHistory.getInstance().startAction(LOCAL_HISTORY_ACTION);
       ProgressIndicator progressIndicator = ProgressManager.getInstance().getProgressIndicator();
-
+      if (progressIndicator != null) {
+        progressIndicator.setIndeterminate(false);
+      }
       try {
         int toBeProcessed = myVcsToVirtualFiles.size();
         int processed = 0;
@@ -374,10 +377,8 @@ public abstract class AbstractCommonUpdateAction extends AbstractVcsAction {
           doVfsRefresh();
         } finally {
           myProjectLevelVcsManager.stopBackgroundVcsOperation();
-          if (!myProject.isDisposed()) {
-            myProject.getMessageBus().syncPublisher(UpdatedFilesListener.UPDATED_FILES).
-              consume(UpdatedFilesReverseSide.getPathsFromUpdatedFiles(myUpdatedFiles));
-          }
+          BackgroundTaskUtil.syncPublisher(myProject, UpdatedFilesListener.UPDATED_FILES).
+            consume(UpdatedFilesReverseSide.getPathsFromUpdatedFiles(myUpdatedFiles));
         }
       }
     }
@@ -409,7 +410,7 @@ public abstract class AbstractCommonUpdateAction extends AbstractVcsAction {
     }
 
     private void notifyAnnotations() {
-      final VcsAnnotationRefresher refresher = myProject.getMessageBus().syncPublisher(VcsAnnotationRefresher.LOCAL_CHANGES_CHANGED);
+      final VcsAnnotationRefresher refresher = BackgroundTaskUtil.syncPublisher(myProject, VcsAnnotationRefresher.LOCAL_CHANGES_CHANGED);
       UpdateFilesHelper.iterateFileGroupFilesDeletedOnServerFirst(myUpdatedFiles, new UpdateFilesHelper.Callback() {
         @Override
         public void onFile(String filePath, String groupId) {

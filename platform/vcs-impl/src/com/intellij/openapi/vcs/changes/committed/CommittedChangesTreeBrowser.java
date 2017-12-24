@@ -27,6 +27,7 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.keymap.Keymap;
 import com.intellij.openapi.keymap.KeymapManager;
+import com.intellij.openapi.progress.util.BackgroundTaskUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.ui.SplitterProportionsData;
@@ -84,7 +85,7 @@ public class CommittedChangesTreeBrowser extends JPanel implements TypeSafeDataP
 
   private final Project myProject;
   @NotNull private final ChangesBrowserTree myChangesTree;
-  private final RepositoryChangesBrowser myDetailsView;
+  private final MyRepositoryChangesViewer myDetailsView;
   private List<CommittedChangeList> myChangeLists;
   private List<CommittedChangeList> mySelectedChangeLists;
   @NotNull private ChangeListGroupingStrategy myGroupingStrategy = new DateChangeListGroupingStrategy();
@@ -112,7 +113,7 @@ public class CommittedChangesTreeBrowser extends JPanel implements TypeSafeDataP
 
     myProject = project;
     myDecorators = new LinkedList<>();
-    myChangeLists = changeLists;
+    myChangeLists = new ArrayList<>(changeLists);
     myChangesTree = new ChangesBrowserTree();
     myChangesTree.setRootVisible(false);
     myChangesTree.setShowsRootHandles(true);
@@ -120,7 +121,7 @@ public class CommittedChangesTreeBrowser extends JPanel implements TypeSafeDataP
     TreeUtil.expandAll(myChangesTree);
     myChangesTree.setExpandableItemsEnabled(false);
 
-    myDetailsView = new RepositoryChangesBrowser(project, Collections.emptyList());
+    myDetailsView = new MyRepositoryChangesViewer(project);
     myDetailsView.getViewerScrollPane().setBorder(RIGHT_BORDER);
 
     myChangesTree.getSelectionModel().addTreeSelectionListener(new TreeSelectionListener() {
@@ -229,25 +230,20 @@ public class CommittedChangesTreeBrowser extends JPanel implements TypeSafeDataP
 
   public void setToolBar(JComponent toolBar) {
     myLeftPanel.add(toolBar, BorderLayout.NORTH);
-    Dimension prefSize = myDetailsView.getHeaderPanel().getPreferredSize();
-    if (prefSize.height < toolBar.getPreferredSize().height) {
-      prefSize.height = toolBar.getPreferredSize().height;
-      myDetailsView.getHeaderPanel().setPreferredSize(prefSize);
-    }
+    myDetailsView.syncSizeWithToolbar(toolBar);
   }
 
   public void dispose() {
     myConnection.disconnect();
     mySplitterProportionsData.saveSplitterProportions(this);
     mySplitterProportionsData.externalizeToDimensionService("CommittedChanges.SplitterProportions");
-    Disposer.dispose(myDetailsView);
   }
 
   public void setItems(@NotNull List<CommittedChangeList> items, final CommittedChangesBrowserUseCase useCase) {
     myDetailsView.setUseCase(useCase);
-    myChangeLists = items;
+    myChangeLists = new ArrayList<>(items);
     myFilteringStrategy.setFilterBase(items);
-    myProject.getMessageBus().syncPublisher(ITEMS_RELOADED).itemsReloaded();
+    BackgroundTaskUtil.syncPublisher(myProject, ITEMS_RELOADED).itemsReloaded();
     updateModel();
   }
 
@@ -478,9 +474,10 @@ public class CommittedChangesTreeBrowser extends JPanel implements TypeSafeDataP
   }
 
   public void reportLoadedLists(final CommittedChangeListsListener listener) {
+    List<CommittedChangeList> lists = new ArrayList<>(myChangeLists);
     ApplicationManager.getApplication().executeOnPooledThread(() -> {
       listener.onBeforeStartReport();
-      for (CommittedChangeList list : myChangeLists) {
+      for (CommittedChangeList list : lists) {
         listener.report(list);
       }
       listener.onAfterEndReport();
@@ -505,9 +502,9 @@ public class CommittedChangesTreeBrowser extends JPanel implements TypeSafeDataP
     myFilteringStrategy.appendFilterBase(list);
 
     myChangesTree.setModel(buildTreeModel(myFilteringStrategy.filterChangeLists(myChangeLists)));
-    state.applyTo(myChangesTree, (DefaultMutableTreeNode)myChangesTree.getModel().getRoot());
+    state.applyTo(myChangesTree, myChangesTree.getModel().getRoot());
     TreeUtil.expandAll(myChangesTree);
-    myProject.getMessageBus().syncPublisher(ITEMS_RELOADED).itemsReloaded();
+    BackgroundTaskUtil.syncPublisher(myProject, ITEMS_RELOADED).itemsReloaded();
   }
 
   public static class MoreLauncher implements Runnable {
@@ -580,5 +577,23 @@ public class CommittedChangesTreeBrowser extends JPanel implements TypeSafeDataP
 
   public void setLoading(final boolean value) {
     runOrInvokeLaterAboveProgress(() -> myChangesTree.setPaintBusy(value), ModalityState.NON_MODAL, myProject);
+  }
+
+  private static class MyRepositoryChangesViewer extends CommittedChangesBrowser {
+    private final JComponent myHeaderPanel = new JPanel();
+
+    public MyRepositoryChangesViewer(Project project) {
+      super(project);
+    }
+
+    @Nullable
+    @Override
+    protected JComponent createHeaderPanel() {
+      return myHeaderPanel;
+    }
+
+    public void syncSizeWithToolbar(@NotNull JComponent toolbar) {
+      myHeaderPanel.setPreferredSize(new Dimension(0, toolbar.getPreferredSize().height));
+    }
   }
 }

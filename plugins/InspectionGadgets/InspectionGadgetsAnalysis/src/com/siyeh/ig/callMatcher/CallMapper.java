@@ -15,9 +15,11 @@
  */
 package com.siyeh.ig.callMatcher;
 
+import com.intellij.psi.PsiMethod;
 import com.intellij.psi.PsiMethodCallExpression;
 import com.intellij.psi.PsiMethodReferenceExpression;
 import one.util.streamex.StreamEx;
+import org.jetbrains.annotations.Contract;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -60,6 +62,7 @@ public class CallMapper<T> {
     return this;
   }
 
+  @Contract("null -> null")
   public T mapFirst(PsiMethodCallExpression call) {
     if (call == null) return null;
     List<CallHandler<T>> functions = myMap.get(call.getMethodExpression().getReferenceName());
@@ -73,12 +76,27 @@ public class CallMapper<T> {
     return null;
   }
 
+  @Contract("null -> null")
   public T mapFirst(PsiMethodReferenceExpression methodRef) {
     if (methodRef == null) return null;
     List<CallHandler<T>> functions = myMap.get(methodRef.getReferenceName());
     if (functions == null) return null;
     for (CallHandler<T> function : functions) {
       T t = function.applyMethodReference(methodRef);
+      if (t != null) {
+        return t;
+      }
+    }
+    return null;
+  }
+
+  @Contract("null -> null")
+  public T mapFirst(PsiMethod method) {
+    if (method == null) return null;
+    List<CallHandler<T>> functions = myMap.get(method.getName());
+    if (functions == null) return null;
+    for (CallHandler<T> function : functions) {
+      T t = function.applyMethod(method);
       if (t != null) {
         return t;
       }

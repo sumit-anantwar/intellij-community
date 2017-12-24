@@ -85,7 +85,7 @@ public class JUnit5TestRunnerUtil {
     else {
       boolean disableDisabledCondition = isDisabledConditionDisabled(suiteClassNames[0]);
       if (disableDisabledCondition) {
-        builder = builder.configurationParameter("junit.conditions.deactivate", "org.junit.*DisabledCondition");
+        builder = builder.configurationParameter("junit.jupiter.conditions.deactivate", "org.junit.*DisabledCondition");
       }
 
       return builder.selectors(createSelector(suiteClassNames[0])).build();
@@ -111,8 +111,16 @@ public class JUnit5TestRunnerUtil {
     return disableDisabledCondition;
   }
 
+  /**
+   * Unique id is prepended with prefix: @see com.intellij.execution.junit.TestUniqueId#getUniqueIdPresentation()
+   * Method contains ','
+   */
   protected static DiscoverySelector createSelector(String line) {
-    if (line.contains(",")) {
+    if (line.startsWith("\u001B")) {
+      String uniqueId = line.substring("\u001B".length());
+      return DiscoverySelectors.selectUniqueId(uniqueId);
+    }
+    else if (line.contains(",")) {
       return DiscoverySelectors.selectMethod(line.replaceFirst(",", "#"));
     }
     else {
